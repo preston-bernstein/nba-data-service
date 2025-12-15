@@ -1,0 +1,74 @@
+{
+  "info": {
+    "name": "NBA Games Service",
+    "description": "Postman collection for the Go games service. Base URL defaults to http://localhost:4000.",
+    "_postman_id": "e0d6d8c1-0000-4b00-9000-000000000000",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Games Today",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/games/today",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "games",
+            "today"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Game By ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/games/{{id}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "games",
+            "{{id}}"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000"
+    },
+    {
+      "key": "id",
+      "value": "fixture-1"
+    }
+  ]
+}
