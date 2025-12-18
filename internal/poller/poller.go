@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"nba-games-service/internal/domain"
+	"nba-games-service/internal/metrics"
 	"nba-games-service/internal/providers"
 )
 
@@ -17,6 +18,7 @@ type Poller struct {
 	provider providers.GameProvider
 	service  *domain.Service
 	logger   *slog.Logger
+	metrics  *metrics.Recorder
 	interval time.Duration
 
 	ticker   *time.Ticker
@@ -27,7 +29,7 @@ type Poller struct {
 }
 
 // New constructs a Poller with sane defaults.
-func New(provider providers.GameProvider, service *domain.Service, logger *slog.Logger, interval time.Duration) *Poller {
+func New(provider providers.GameProvider, service *domain.Service, logger *slog.Logger, recorder *metrics.Recorder, interval time.Duration) *Poller {
 	if interval <= 0 {
 		interval = defaultInterval
 	}
@@ -35,6 +37,7 @@ func New(provider providers.GameProvider, service *domain.Service, logger *slog.
 		provider: provider,
 		service:  service,
 		logger:   logger,
+		metrics:  recorder,
 		interval: interval,
 		done:     make(chan struct{}),
 	}
@@ -82,7 +85,11 @@ func (p *Poller) Stop(ctx context.Context) error {
 }
 
 func (p *Poller) fetchOnce(ctx context.Context) {
-	games, err := p.provider.FetchGames(ctx)
+	start := time.Now()
+	games, err := p.provider.FetchGames(ctx, "", "")
+	if p.metrics != nil {
+		p.metrics.RecordPollerCycle(time.Since(start), err)
+	}
 	if err != nil {
 		p.logError("poller fetch failed", err)
 		return

@@ -1,12 +1,12 @@
 # NBA Games Service (Go)
 
-This service polls upstream NBA providers, normalizes games into the shared data model, caches them in-memory, and exposes HTTP endpoints consumed by the Node BFF. It currently ships with a fixture provider for local development and wiring for future providers (e.g., balldontlie).
+This service polls upstream NBA providers, normalizes games into the shared data model, caches them in-memory, and exposes HTTP endpoints consumed by the Node BFF. It ships with a fixture provider for local development and a balldontlie client for real upstream data.
 
 ## Features
 - Canonical game/domain models aligned with the portfolio’s shared types.
 - HTTP API: `/health`, `/games/today`, `/games/{id}`.
 - In-memory store with a periodic poller that warms data on startup.
-- Configurable provider selection (`fixture` default; balldontlie stubbed for now).
+- Configurable provider selection (`fixture` default; balldontlie client available).
 - Graceful shutdown and test coverage across handlers, poller, store, server wiring, and config.
 
 ## Getting Started
@@ -22,7 +22,14 @@ go mod tidy
 Environment variables (optional; defaults shown). See `.env.example`:
 - `PORT` (default `4000`)
 - `POLL_INTERVAL` (default `30s`)
-- `PROVIDER` (default `fixture`; `balldontlie` stub available)
+- `PROVIDER` (default `fixture`; `balldontlie` available)
+- `BALDONTLIE_BASE_URL` (default `https://api.balldontlie.io/v1`)
+- `BALDONTLIE_API_KEY` (optional; use if your balldontlie instance requires auth)
+- `BALDONTLIE_TIMEZONE` (default `America/New_York`; controls which “today” date is requested from balldontlie)
+- `BALDONTLIE_MAX_PAGES` (default `5`; cap on paginated fetches)
+- `LOG_LEVEL` (optional; `debug`/`info`/`warn`/`error`, default `info`)
+- `LOG_FORMAT` (optional; `json` default, or `text`)
+  - Use `LOG_FORMAT=text` and `LOG_LEVEL=debug` for local development to get readable output with source hints; keep `json` for prod.
 
 ## Run
 Using Make:
@@ -46,6 +53,7 @@ curl http://localhost:4000/games/fixture-1
 ## Endpoints
 - `GET /health` → `{"status":"ok"}`
 - `GET /games/today` → `{ "date": "YYYY-MM-DD", "games": [...] }`
+- `GET /games?date=YYYY-MM-DD&tz=America/New_York` → games for a specific date (defaults to “today” if omitted; optional `tz` influences “today” when `date` is missing; invalid `tz` falls back to server default)
 - `GET /games/{id}` → single game or 404
 
 When using the fixture provider, `games/today` returns two deterministic sample games.
@@ -68,6 +76,15 @@ CGO_ENABLED=0 GOCACHE=$(pwd)/.cache/go-build go build ./cmd/server
 
 VS Code: Command Palette → Run Task → `Go: Build (make build)`.
 
+### Direnv (optional, recommended for dev)
+If you use `direnv`, add the hook to your shell and allow the repo to auto-load `.env`:
+```sh
+echo 'eval "$(direnv hook zsh)"' >> ~/.zshrc
+source ~/.zshrc
+direnv allow
+```
+An `.envrc` is included that runs `dotenv .env`. Keep secrets out of git; use `.env.example` as a template.
+
 ## Manual API Testing
 - Postman collection: `postman/nba-games-service.postman_collection.json` (baseUrl defaults to `http://localhost:4000`).
 - Start the server (fixture provider pre-populates data) and hit the endpoints above.
@@ -87,9 +104,11 @@ VS Code: Command Palette → Run Task → `Go: Build (make build)`.
 ## Portfolio Notes
 This repo is part of a broader portfolio. The service respects the shared data model and can be swapped from the fixture provider to a real upstream client without changing the public contract. Tests cover core behavior and edge cases across the stack. The Postman collection and VS Code tasks are included to streamline demonstration and review. No external network calls are required for the fixture path.
 
+For the balldontlie provider, “today” is derived from a configurable server timezone (default `America/New_York`). If you later want per-user local “today,” the API would need to accept a date/timezone parameter and the UI would pass it through.
+
 ## Status
-- Done: baseline server wiring, fixture provider, poller with warm-start, in-memory store, HTTP endpoints (`/health`, `/games/today`, `/games/{id}`), provider selection, VS Code tasks, Postman collection, tests across handlers/poller/store/server/config.
-- In progress/planned: real upstream provider integration (balldontlie client + mapper), metrics and richer logging, retry/backoff for provider errors, CI pipeline, containerization.
+- Done: baseline server wiring, fixture provider, poller with warm-start, in-memory store, HTTP endpoints (`/health`, `/games/today`, `/games/{id}`), provider selection, balldontlie client + mapper, VS Code tasks, Postman collection, tests across handlers/poller/store/server/config.
+- In progress/planned: metrics and richer logging, retry/backoff for provider errors, CI pipeline, containerization.
 
 ## Roadmap
 - Implement a real balldontlie provider client and mapper to domain models.

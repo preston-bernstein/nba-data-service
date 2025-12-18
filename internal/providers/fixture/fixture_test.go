@@ -12,7 +12,7 @@ func TestFetchGamesReturnsDeterministicGames(t *testing.T) {
 		now: func() time.Time { return fixed },
 	}
 
-	games, err := p.FetchGames(context.Background())
+	games, err := p.FetchGames(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

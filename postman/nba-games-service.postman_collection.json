@@ -42,6 +42,30 @@
       "response": []
     },
     {
+      "name": "Games By Date",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/games?date={{date}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "games"
+          ],
+          "query": [
+            {
+              "key": "date",
+              "value": "{{date}}",
+              "description": "YYYY-MM-DD"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
       "name": "Game By ID",
       "request": {
         "method": "GET",
@@ -65,6 +89,10 @@
     {
       "key": "baseUrl",
       "value": "http://localhost:4000"
+    },
+    {
+      "key": "date",
+      "value": "2024-01-01"
     },
     {
       "key": "id",

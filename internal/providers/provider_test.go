@@ -9,7 +9,10 @@ import (
 
 type testProvider struct{}
 
-func (t *testProvider) FetchGames(ctx context.Context) ([]domain.Game, error) {
+func (t *testProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+	_ = ctx
+	_ = date
+	_ = tz
 	return nil, nil
 }
 

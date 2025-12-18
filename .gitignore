@@ -1,0 +1,22 @@
+# Binaries
+bin/
+server
+
+# Build cache
+.cache/
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# Environment
+.env
+
+# Logs
+*.log
+
+# Internal governance docs
+AGENTS*
+docs-internal/
