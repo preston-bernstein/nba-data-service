@@ -7,14 +7,14 @@ import (
 )
 
 func TestNewLoggerNotNil(t *testing.T) {
-	logger := NewLogger()
+	logger := NewLogger(Config{})
 	if logger == nil {
 		t.Fatal("expected logger to be non-nil")
 	}
 }
 
 func TestNewLoggerUsesTextHandlerWithInfoLevel(t *testing.T) {
-	logger := NewLogger()
+	logger := NewLogger(Config{Format: "text", Level: "info"})
 
 	if enabled := logger.Enabled(context.Background(), slog.LevelInfo); !enabled {
 		t.Fatal("expected info level to be enabled")

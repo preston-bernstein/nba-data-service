@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
@@ -10,10 +11,22 @@ import (
 	"nba-games-service/internal/store"
 )
 
+type stubProvider struct {
+	games []domain.Game
+	err   error
+}
+
+func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+	_ = ctx
+	_ = date
+	_ = tz
+	return s.games, s.err
+}
+
 func TestHealth(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil)
+	h := NewHandler(svc, nil, nil)
 
 	req := httptest.NewRequest("GET", "/health", nil)
 	rr := httptest.NewRecorder()
@@ -48,7 +61,7 @@ func TestGamesToday(t *testing.T) {
 	}
 	ms.SetGames([]domain.Game{game})
 
-	h := NewHandler(svc, nil)
+	h := NewHandler(svc, nil, nil)
 	fixedNow := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return fixedNow }
 
@@ -79,10 +92,42 @@ func TestGamesToday(t *testing.T) {
 	}
 }
 
+func TestGamesTodayWithDateUsesProvider(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := domain.NewService(ms)
+
+	provider := &stubProvider{
+		games: []domain.Game{{ID: "provider-game"}},
+	}
+
+	h := NewHandler(svc, nil, provider)
+
+	req := httptest.NewRequest("GET", "/games?date=2024-02-01", nil)
+	rr := httptest.NewRecorder()
+
+	h.GamesToday(rr, req)
+
+	if rr.Code != 200 {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	var resp domain.TodayResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed decoding games response: %v", err)
+	}
+
+	if resp.Date != "2024-02-01" {
+		t.Fatalf("expected date to reflect query param, got %s", resp.Date)
+	}
+	if len(resp.Games) != 1 || resp.Games[0].ID != "provider-game" {
+		t.Fatalf("expected provider games, got %+v", resp.Games)
+	}
+}
+
 func TestGameByIDNotFound(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil)
+	h := NewHandler(svc, nil, nil)
 
 	req := httptest.NewRequest("GET", "/games/unknown", nil)
 	rr := httptest.NewRecorder()
@@ -97,7 +142,7 @@ func TestGameByIDNotFound(t *testing.T) {
 func TestGameByIDMissingID(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil)
+	h := NewHandler(svc, nil, nil)
 
 	req := httptest.NewRequest("GET", "/games/", nil)
 	rr := httptest.NewRecorder()
@@ -124,7 +169,7 @@ func TestGameByIDSuccess(t *testing.T) {
 	}
 	ms.SetGames([]domain.Game{game})
 
-	h := NewHandler(svc, nil)
+	h := NewHandler(svc, nil, nil)
 
 	req := httptest.NewRequest("GET", "/games/game-1", nil)
 	rr := httptest.NewRecorder()

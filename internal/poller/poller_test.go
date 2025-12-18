@@ -17,8 +17,10 @@ type stubProvider struct {
 	notify chan struct{}
 }
 
-func (s *stubProvider) FetchGames(ctx context.Context) ([]domain.Game, error) {
+func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
 	_ = ctx
+	_ = date
+	_ = tz
 	if s.notify != nil {
 		select {
 		case <-s.notify:
@@ -50,7 +52,7 @@ func TestPollerFetchesAndStoresGames(t *testing.T) {
 	s := store.NewMemoryStore()
 	svc := domain.NewService(s)
 
-	p := New(provider, svc, nil, 10*time.Millisecond)
+	p := New(provider, svc, nil, nil, 10*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -85,7 +87,7 @@ func TestPollerStopsOnContextCancel(t *testing.T) {
 	s := store.NewMemoryStore()
 	svc := domain.NewService(s)
 
-	p := New(provider, svc, nil, 5*time.Millisecond)
+	p := New(provider, svc, nil, nil, 5*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	p.Start(ctx)
@@ -115,7 +117,7 @@ func TestPollerStopIsIdempotent(t *testing.T) {
 	s := store.NewMemoryStore()
 	svc := domain.NewService(s)
 
-	p := New(provider, svc, nil, time.Hour)
+	p := New(provider, svc, nil, nil, time.Hour)
 
 	if err := p.Stop(context.Background()); err != nil {
 		t.Fatalf("first stop returned error: %v", err)
@@ -133,7 +135,7 @@ func TestPollerStartIsIdempotent(t *testing.T) {
 	s := store.NewMemoryStore()
 	svc := domain.NewService(s)
 
-	p := New(provider, svc, nil, time.Hour)
+	p := New(provider, svc, nil, nil, time.Hour)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

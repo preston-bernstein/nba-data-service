@@ -6,6 +6,7 @@ import nethttp "net/http"
 func NewRouter(handler *Handler) nethttp.Handler {
 	mux := nethttp.NewServeMux()
 	mux.HandleFunc("/health", handler.Health)
+	mux.HandleFunc("/games", handler.GamesToday)
 	mux.HandleFunc("/games/today", handler.GamesToday)
 	mux.HandleFunc("/games/", handler.GameByID)
 	return mux
