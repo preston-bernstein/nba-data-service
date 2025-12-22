@@ -13,7 +13,7 @@ import (
 func TestRouterRoutesKnownPaths(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil, nil)
+	h := NewHandler(svc, nil, nil, nil)
 
 	router := NewRouter(h)
 
@@ -37,7 +37,7 @@ func TestRouterRoutesKnownPaths(t *testing.T) {
 func TestRouterUnknownRouteReturns404(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil, nil)
+	h := NewHandler(svc, nil, nil, nil)
 	h.now = func() time.Time { return time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC) }
 
 	router := NewRouter(h)

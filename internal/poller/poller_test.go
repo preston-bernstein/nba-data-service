@@ -2,6 +2,9 @@ package poller
 
 import (
 	"context"
+	"errors"
+	"io"
+	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -146,4 +149,62 @@ func TestPollerStartIsIdempotent(t *testing.T) {
 	if err := p.Stop(context.Background()); err != nil {
 		t.Fatalf("stop returned error: %v", err)
 	}
+}
+
+func TestPollerStatusTracksFailuresAndSuccess(t *testing.T) {
+	provider := &stubProvider{
+		games: []domain.Game{},
+		err:   errors.New("boom"),
+	}
+
+	s := store.NewMemoryStore()
+	svc := domain.NewService(s)
+
+	p := New(provider, svc, nil, nil, time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p.fetchOnce(ctx)
+	status := p.Status()
+	if status.ConsecutiveFailures != 1 {
+		t.Fatalf("expected 1 failure, got %d", status.ConsecutiveFailures)
+	}
+	if status.LastError == "" {
+		t.Fatalf("expected last error recorded")
+	}
+	if status.LastSuccess != (time.Time{}) {
+		t.Fatalf("expected no success recorded yet")
+	}
+	if status.IsReady() {
+		t.Fatalf("expected not ready after failure")
+	}
+
+	provider.err = nil
+	p.fetchOnce(ctx)
+	status = p.Status()
+	if status.ConsecutiveFailures != 0 {
+		t.Fatalf("expected failures reset, got %d", status.ConsecutiveFailures)
+	}
+	if status.LastSuccess.IsZero() {
+		t.Fatalf("expected success timestamp")
+	}
+	if !status.IsReady() {
+		t.Fatalf("expected ready after success")
+	}
+}
+
+func TestPollerLogsOnErrorAndSuccess(t *testing.T) {
+	provider := &stubProvider{
+		err: errors.New("fail"),
+	}
+	s := store.NewMemoryStore()
+	svc := domain.NewService(s)
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
+
+	p := New(provider, svc, logger, nil, time.Second)
+	p.fetchOnce(context.Background()) // should log error
+
+	provider.err = nil
+	provider.games = []domain.Game{{ID: "ok"}}
+	p.fetchOnce(context.Background()) // should log info
 }

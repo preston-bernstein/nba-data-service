@@ -160,6 +160,45 @@ func TestRetryingProviderDelaySelection(t *testing.T) {
 	}
 }
 
+func TestNewRetryingProviderWithRNG(t *testing.T) {
+	fp := &flakeyProvider{failures: 1}
+	rng := rand.New(rand.NewSource(2))
+	rp := NewRetryingProviderWithRNG(fp, nil, metrics.NewRecorder(), "flakey", rng, 2, time.Millisecond)
+
+	games, err := rp.FetchGames(context.Background(), "", "")
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("expected games from provider")
+	}
+}
+
+func TestNewRetryingProviderWithDefaultRNG(t *testing.T) {
+	fp := &flakeyProvider{failures: 0}
+	rp := NewRetryingProviderWithRNG(fp, nil, metrics.NewRecorder(), "flakey", nil, 0, 0)
+	games, err := rp.FetchGames(context.Background(), "", "")
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("expected games from provider")
+	}
+}
+
+func TestNewRetryingProviderWithNilProviderSetsFallbackName(t *testing.T) {
+	rp := NewRetryingProviderWithRNG(nil, nil, metrics.NewRecorder(), "", nil, 0, 0).(*retryingProvider)
+	if rp.providerName != "provider" {
+		t.Fatalf("expected fallback provider name, got %s", rp.providerName)
+	}
+	if rp.maxAttempts != defaultRetryAttempts {
+		t.Fatalf("expected default attempts, got %d", rp.maxAttempts)
+	}
+	if rp.backoffFn(1) != defaultBackoff {
+		t.Fatalf("expected default backoff")
+	}
+}
+
 type rateLimitThenSuccessProvider struct {
 	calls int
 }

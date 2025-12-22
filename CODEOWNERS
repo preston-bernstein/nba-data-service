@@ -1,0 +1,9 @@
+# Code owners for review and branch protection.
+# Adjust handles/emails as needed.
+
+* @prestonbernstein
+internal/** @prestonbernstein
+api/** @prestonbernstein
+.github/** @prestonbernstein
+Dockerfile @prestonbernstein
+Makefile @prestonbernstein

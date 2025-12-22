@@ -1,9 +1,10 @@
 # Binaries
 bin/
-server
+/server
 
 # Build cache
 .cache/
+.gocache/
 
 # macOS
 .DS_Store
@@ -13,6 +14,9 @@ server
 
 # Environment
 .env
+
+# Coverage
+coverage.out
 
 # Logs
 *.log

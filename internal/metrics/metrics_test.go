@@ -31,6 +31,8 @@ func TestRecorderTracksRateLimits(t *testing.T) {
 	rec := NewRecorder()
 	rec.RecordRateLimit("balldontlie", 5*time.Second)
 	rec.RecordRateLimit("balldontlie", 0)
+	rec.RecordPollerCycle(time.Second, errors.New("fail"))
+	rec.RecordHTTPRequest("GET", "/health", 200, time.Millisecond)
 
 	if got := rec.RateLimitHits("balldontlie"); got != 2 {
 		t.Fatalf("expected 2 rate limit hits, got %d", got)

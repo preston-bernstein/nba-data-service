@@ -26,6 +26,25 @@ type Poller struct {
 	stopOnce sync.Once
 	startMu  sync.Mutex
 	started  bool
+
+	statusMu sync.RWMutex
+	status   Status
+}
+
+// Status describes the recent health of the poller loop.
+type Status struct {
+	ConsecutiveFailures int
+	LastError           string
+	LastAttempt         time.Time
+	LastSuccess         time.Time
+}
+
+// IsReady reports whether the poller has had a recent success and is not failing repeatedly.
+func (s Status) IsReady() bool {
+	if s.LastSuccess.IsZero() {
+		return false
+	}
+	return s.ConsecutiveFailures < 3
 }
 
 // New constructs a Poller with sane defaults.
@@ -86,16 +105,19 @@ func (p *Poller) Stop(ctx context.Context) error {
 
 func (p *Poller) fetchOnce(ctx context.Context) {
 	start := time.Now()
+	p.recordAttempt(start)
 	games, err := p.provider.FetchGames(ctx, "", "")
 	if p.metrics != nil {
 		p.metrics.RecordPollerCycle(time.Since(start), err)
 	}
 	if err != nil {
 		p.logError("poller fetch failed", err)
+		p.recordFailure(err, start)
 		return
 	}
 
 	p.service.ReplaceGames(games)
+	p.recordSuccess(start)
 	p.logInfo("poller refreshed games", "count", len(games))
 }
 
@@ -115,4 +137,35 @@ func (p *Poller) logError(msg string, err error) {
 	if p.logger != nil {
 		p.logger.Error(msg, "error", err)
 	}
+}
+
+func (p *Poller) recordAttempt(at time.Time) {
+	p.statusMu.Lock()
+	defer p.statusMu.Unlock()
+	p.status.LastAttempt = at
+}
+
+func (p *Poller) recordSuccess(at time.Time) {
+	p.statusMu.Lock()
+	defer p.statusMu.Unlock()
+	p.status.ConsecutiveFailures = 0
+	p.status.LastError = ""
+	p.status.LastSuccess = at
+}
+
+func (p *Poller) recordFailure(err error, at time.Time) {
+	p.statusMu.Lock()
+	defer p.statusMu.Unlock()
+	p.status.ConsecutiveFailures++
+	if err != nil {
+		p.status.LastError = err.Error()
+	}
+	p.status.LastAttempt = at
+}
+
+// Status returns a snapshot of the poller's recent health.
+func (p *Poller) Status() Status {
+	p.statusMu.RLock()
+	defer p.statusMu.RUnlock()
+	return p.status
 }

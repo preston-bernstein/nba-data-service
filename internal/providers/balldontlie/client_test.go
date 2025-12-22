@@ -380,3 +380,11 @@ func TestRateLimitDetails(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveDatePrefersParam(t *testing.T) {
+	c := NewClient(Config{})
+	got := c.resolveDate("2024-02-01", time.UTC)
+	if got != "2024-02-01" {
+		t.Fatalf("expected provided date, got %s", got)
+	}
+}

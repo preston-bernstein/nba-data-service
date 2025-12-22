@@ -1,0 +1,234 @@
+openapi: 3.1.0
+info:
+  title: NBA Games Service
+  version: "1.0.0"
+  description: HTTP contract for the Go realtime games service consumed by the Node BFF.
+servers:
+  - url: http://localhost:4000
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthCheckResponse"
+        "503":
+          description: Service is shutting down or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /ready:
+    get:
+      summary: Readiness probe
+      responses:
+        "200":
+          description: Service is ready to serve traffic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          description: Service is not ready (poller not warmed or failing)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /games/today:
+    get:
+      summary: Get games for today
+      description: Alias for `/games` without `date`, using the service's configured timezone unless `tz` is provided.
+      parameters:
+        - $ref: "#/components/parameters/TzParam"
+      responses:
+        "200":
+          description: Games for today
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodayResponse"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /games:
+    get:
+      summary: Get games by date
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: YYYY-MM-DD date; defaults to "today" in the service's configured timezone.
+          schema:
+            type: string
+            pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+        - $ref: "#/components/parameters/TzParam"
+      responses:
+        "400":
+          description: Invalid date format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "200":
+          description: Games for the requested date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodayResponse"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /games/{id}:
+    get:
+      summary: Get a game by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "400":
+          description: Invalid or missing game id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "200":
+          description: The requested game
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "404":
+          description: Game not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+components:
+  parameters:
+    TzParam:
+      name: tz
+      in: query
+      required: false
+      description: IANA timezone (e.g., America/New_York). When `date` is omitted, this influences which day is treated as "today".
+      schema:
+        type: string
+  responses:
+    UpstreamError:
+      description: Upstream provider unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+        examples:
+          unavailable:
+            value:
+              error: upstream temporarily unavailable
+              requestId: abc123
+    MethodNotAllowed:
+      description: Method not allowed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            default:
+              value:
+                error: method not allowed
+  schemas:
+    HealthCheckResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok]
+      required: [status]
+    TodayResponse:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        games:
+          type: array
+          items:
+            $ref: "#/components/schemas/Game"
+      required: [date, games]
+    Game:
+      type: object
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+        homeTeam:
+          $ref: "#/components/schemas/Team"
+        awayTeam:
+          $ref: "#/components/schemas/Team"
+        startTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [SCHEDULED, IN_PROGRESS, FINAL, POSTPONED, CANCELED]
+        score:
+          $ref: "#/components/schemas/Score"
+        meta:
+          $ref: "#/components/schemas/GameMeta"
+      required:
+        [id, provider, homeTeam, awayTeam, startTime, status, score, meta]
+    Team:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        externalId:
+          type: integer
+      required: [id, name, externalId]
+    Score:
+      type: object
+      properties:
+        home:
+          type: integer
+        away:
+          type: integer
+      required: [home, away]
+    GameMeta:
+      type: object
+      properties:
+        season:
+          type: string
+        upstreamGameId:
+          type: integer
+      required: [season, upstreamGameId]
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        requestId:
+          type: string
+      required: [error]
+    ReadyResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready]
+      required: [status]

@@ -6,21 +6,57 @@ import (
 	"testing"
 )
 
-func TestNewLoggerNotNil(t *testing.T) {
-	logger := NewLogger(Config{})
-	if logger == nil {
-		t.Fatal("expected logger to be non-nil")
+func TestFromContextAndWithLogger(t *testing.T) {
+	base := slog.Default()
+	ctx := context.Background()
+	if got := FromContext(ctx, base); got != base {
+		t.Fatalf("expected fallback logger")
+	}
+
+	ctx = WithLogger(ctx, nil)
+	if got := FromContext(ctx, base); got != base {
+		t.Fatalf("nil logger should fall back")
+	}
+
+	custom := slog.Default().With("k", "v")
+	ctx = WithLogger(ctx, custom)
+	if got := FromContext(ctx, base); got != custom {
+		t.Fatalf("expected custom logger from context")
 	}
 }
 
-func TestNewLoggerUsesTextHandlerWithInfoLevel(t *testing.T) {
-	logger := NewLogger(Config{Format: "text", Level: "info"})
-
-	if enabled := logger.Enabled(context.Background(), slog.LevelInfo); !enabled {
-		t.Fatal("expected info level to be enabled")
+func TestParseLevel(t *testing.T) {
+	if parseLevel("debug") != slog.LevelDebug {
+		t.Fatalf("expected debug level")
 	}
+	if parseLevel("warn") != slog.LevelWarn {
+		t.Fatalf("expected warn level")
+	}
+	if parseLevel("error") != slog.LevelError {
+		t.Fatalf("expected error level")
+	}
+	if parseLevel("") != slog.LevelInfo {
+		t.Fatalf("expected default info level")
+	}
+}
 
-	if enabled := logger.Enabled(context.Background(), slog.LevelDebug); enabled {
-		t.Fatal("expected debug level to be disabled")
+func TestBuildHandlerFormats(t *testing.T) {
+	jsonHandler := buildHandler("json", slog.LevelInfo)
+	if jsonHandler == nil {
+		t.Fatalf("expected json handler")
+	}
+	textHandler := buildHandler("text", slog.LevelDebug)
+	if textHandler == nil {
+		t.Fatalf("expected text handler")
+	}
+}
+
+func TestNewLoggerAddsFields(t *testing.T) {
+	logger := NewLogger(Config{
+		Service: "svc",
+		Version: "v1",
+	})
+	if logger == nil {
+		t.Fatalf("expected logger")
 	}
 }

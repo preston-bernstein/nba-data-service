@@ -3,11 +3,14 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"nba-games-service/internal/domain"
+	"nba-games-service/internal/poller"
 	"nba-games-service/internal/store"
 )
 
@@ -26,7 +29,7 @@ func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) (
 func TestHealth(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil, nil)
+	h := NewHandler(svc, nil, nil, nil)
 
 	req := httptest.NewRequest("GET", "/health", nil)
 	rr := httptest.NewRecorder()
@@ -46,6 +49,31 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestHealthShuttingDownReturnsServiceUnavailable(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := domain.NewService(ms)
+	h := NewHandler(svc, nil, nil, nil)
+
+	req := httptest.NewRequest("GET", "/health", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	h.Health(rr, req)
+
+	if rr.Code != 503 {
+		t.Fatalf("expected 503, got %d", rr.Code)
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed decoding health response: %v", err)
+	}
+	if resp["error"] != "shutting down" {
+		t.Fatalf("unexpected error %q", resp["error"])
+	}
+}
+
 func TestGamesToday(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := domain.NewService(ms)
@@ -61,7 +89,7 @@ func TestGamesToday(t *testing.T) {
 	}
 	ms.SetGames([]domain.Game{game})
 
-	h := NewHandler(svc, nil, nil)
+	h := NewHandler(svc, nil, nil, nil)
 	fixedNow := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return fixedNow }
 
@@ -100,7 +128,7 @@ func TestGamesTodayWithDateUsesProvider(t *testing.T) {
 		games: []domain.Game{{ID: "provider-game"}},
 	}
 
-	h := NewHandler(svc, nil, provider)
+	h := NewHandler(svc, nil, provider, nil)
 
 	req := httptest.NewRequest("GET", "/games?date=2024-02-01", nil)
 	rr := httptest.NewRecorder()
@@ -124,10 +152,90 @@ func TestGamesTodayWithDateUsesProvider(t *testing.T) {
 	}
 }
 
+func TestGamesTodayWithInvalidDateReturnsBadRequest(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := domain.NewService(ms)
+	h := NewHandler(svc, nil, &stubProvider{}, nil)
+
+	req := httptest.NewRequest("GET", "/games?date=not-a-date", nil)
+	rr := httptest.NewRecorder()
+
+	h.GamesToday(rr, req)
+
+	if rr.Code != 400 {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed decoding error response: %v", err)
+	}
+	if resp["error"] == "" {
+		t.Fatalf("expected error message")
+	}
+}
+
+func TestGamesTodayUpstreamFailureReturnsStandardError(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := domain.NewService(ms)
+
+	tests := []struct {
+		name          string
+		err           error
+		expectedError string
+		withReqID     bool
+	}{
+		{
+			name:          "generic",
+			err:           errors.New("boom"),
+			expectedError: "upstream temporarily unavailable",
+			withReqID:     true,
+		},
+		{
+			name:          "deadline",
+			err:           context.DeadlineExceeded,
+			expectedError: "upstream timed out",
+			withReqID:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		provider := &stubProvider{err: tc.err}
+		h := NewHandler(svc, nil, provider, nil)
+
+		req := httptest.NewRequest("GET", "/games?date=2024-02-01", nil)
+		if tc.withReqID {
+			req = req.WithContext(withRequestID(req.Context(), "req-123"))
+		}
+		rr := httptest.NewRecorder()
+
+		h.GamesToday(rr, req)
+
+		if rr.Code != 502 {
+			t.Fatalf("%s: expected 502, got %d", tc.name, rr.Code)
+		}
+
+		var resp map[string]string
+		if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+			t.Fatalf("%s: failed decoding error response: %v", tc.name, err)
+		}
+		if resp["error"] != tc.expectedError {
+			t.Fatalf("%s: unexpected error message %q", tc.name, resp["error"])
+		}
+		_, hasReqID := resp["requestId"]
+		if tc.withReqID && !hasReqID {
+			t.Fatalf("%s: expected requestId to be included", tc.name)
+		}
+		if !tc.withReqID && hasReqID {
+			t.Fatalf("%s: expected requestId to be absent", tc.name)
+		}
+	}
+}
+
 func TestGameByIDNotFound(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil, nil)
+	h := NewHandler(svc, nil, nil, nil)
 
 	req := httptest.NewRequest("GET", "/games/unknown", nil)
 	rr := httptest.NewRecorder()
@@ -142,15 +250,33 @@ func TestGameByIDNotFound(t *testing.T) {
 func TestGameByIDMissingID(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil, nil)
+	h := NewHandler(svc, nil, nil, nil)
 
-	req := httptest.NewRequest("GET", "/games/", nil)
-	rr := httptest.NewRecorder()
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"missing", "/games/"},
+		{"empty", "/games"},
+		{"whitespace", "/games/%20bad"},
+	}
 
-	h.GameByID(rr, req)
+	for _, c := range cases {
+		req := httptest.NewRequest("GET", c.path, nil)
+		rr := httptest.NewRecorder()
 
-	if rr.Code != 400 {
-		t.Fatalf("expected 400, got %d", rr.Code)
+		h.GameByID(rr, req)
+
+		if rr.Code != 400 {
+			t.Fatalf("%s: expected 400, got %d", c.name, rr.Code)
+		}
+		var resp map[string]string
+		if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+			t.Fatalf("%s: failed to decode response: %v", c.name, err)
+		}
+		if resp["error"] == "" {
+			t.Fatalf("%s: expected error message", c.name)
+		}
 	}
 }
 
@@ -169,7 +295,7 @@ func TestGameByIDSuccess(t *testing.T) {
 	}
 	ms.SetGames([]domain.Game{game})
 
-	h := NewHandler(svc, nil, nil)
+	h := NewHandler(svc, nil, nil, nil)
 
 	req := httptest.NewRequest("GET", "/games/game-1", nil)
 	rr := httptest.NewRecorder()
@@ -186,5 +312,102 @@ func TestGameByIDSuccess(t *testing.T) {
 	}
 	if resp.ID != "game-1" {
 		t.Fatalf("unexpected game id %s", resp.ID)
+	}
+}
+
+func TestHandlersRejectNonGET(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := domain.NewService(ms)
+	h := NewHandler(svc, nil, nil, nil)
+	router := NewRouter(h)
+
+	cases := []string{
+		"/health",
+		"/ready",
+		"/games",
+		"/games/today",
+		"/games/game-1",
+	}
+
+	for _, path := range cases {
+		req := httptest.NewRequest("POST", path, nil)
+		rr := httptest.NewRecorder()
+
+		router.ServeHTTP(rr, req)
+
+		if rr.Code != 405 {
+			t.Fatalf("%s: expected 405, got %d", path, rr.Code)
+		}
+	}
+}
+
+func TestReadyNotReadyReturns503(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := domain.NewService(ms)
+	h := NewHandler(svc, nil, nil, func() poller.Status {
+		return poller.Status{
+			LastError:           "not ready",
+			ConsecutiveFailures: 3,
+		}
+	})
+
+	req := httptest.NewRequest("GET", "/ready", nil)
+	rr := httptest.NewRecorder()
+
+	h.Ready(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rr.Code)
+	}
+}
+
+func TestReadyReturnsOKWhenReady(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := domain.NewService(ms)
+	h := NewHandler(svc, nil, nil, func() poller.Status {
+		return poller.Status{
+			LastSuccess: time.Now(),
+		}
+	})
+
+	req := httptest.NewRequest("GET", "/ready", nil)
+	rr := httptest.NewRecorder()
+
+	h.Ready(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestReadyWithNilStatusFnDefaultsReady(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := domain.NewService(ms)
+	h := NewHandler(svc, nil, nil, nil)
+
+	req := httptest.NewRequest("GET", "/ready", nil)
+	rr := httptest.NewRecorder()
+
+	h.Ready(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestReadyNotReadyDefaultMessage(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := domain.NewService(ms)
+	h := NewHandler(svc, nil, nil, func() poller.Status {
+		return poller.Status{ConsecutiveFailures: 5}
+	})
+
+	req := httptest.NewRequest("GET", "/ready", nil)
+	rr := httptest.NewRecorder()
+
+	h.Ready(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rr.Code)
 	}
 }

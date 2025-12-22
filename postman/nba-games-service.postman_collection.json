@@ -7,6 +7,23 @@
   },
   "item": [
     {
+      "name": "Ready",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/ready",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "ready"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
       "name": "Health",
       "request": {
         "method": "GET",

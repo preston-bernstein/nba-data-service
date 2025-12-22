@@ -16,6 +16,11 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
+var (
+	promReaderFactory = prometheusComponents
+	otlpReaderFactory = buildOTLPReader
+)
+
 // TelemetryConfig controls how metrics are exported.
 type TelemetryConfig struct {
 	Enabled      bool
@@ -36,7 +41,7 @@ func Setup(ctx context.Context, cfg TelemetryConfig) (*Recorder, http.Handler, f
 		cfg.ServiceName = "nba-games-service"
 	}
 
-	promReader, promHandler, err := prometheusComponents()
+	promReader, promHandler, err := promReaderFactory()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -44,15 +49,11 @@ func Setup(ctx context.Context, cfg TelemetryConfig) (*Recorder, http.Handler, f
 	opts := []sdkmetric.Option{sdkmetric.WithReader(promReader)}
 
 	if cfg.OtlpEndpoint != "" {
-		otlpOpts := []otlpmetrichttp.Option{otlpmetrichttp.WithEndpoint(cfg.OtlpEndpoint)}
-		if cfg.OtlpInsecure {
-			otlpOpts = append(otlpOpts, otlpmetrichttp.WithInsecure())
-		}
-		otlpExp, err := otlpmetrichttp.New(ctx, otlpOpts...)
+		otlpReader, err := otlpReaderFactory(ctx, cfg.OtlpEndpoint, cfg.OtlpInsecure)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		opts = append(opts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(otlpExp, sdkmetric.WithInterval(15*time.Second))))
+		opts = append(opts, sdkmetric.WithReader(otlpReader))
 	}
 
 	res, err := resource.New(ctx,
@@ -77,6 +78,18 @@ func Setup(ctx context.Context, cfg TelemetryConfig) (*Recorder, http.Handler, f
 	}
 
 	return rec, promHandler, shutdown, nil
+}
+
+func buildOTLPReader(ctx context.Context, endpoint string, insecure bool) (sdkmetric.Reader, error) {
+	otlpOpts := []otlpmetrichttp.Option{otlpmetrichttp.WithEndpoint(endpoint)}
+	if insecure {
+		otlpOpts = append(otlpOpts, otlpmetrichttp.WithInsecure())
+	}
+	otlpExp, err := otlpmetrichttp.New(ctx, otlpOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return sdkmetric.NewPeriodicReader(otlpExp, sdkmetric.WithInterval(15*time.Second)), nil
 }
 
 type otelInstruments struct {

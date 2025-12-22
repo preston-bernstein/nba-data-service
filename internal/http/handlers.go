@@ -1,14 +1,18 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	nethttp "net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"nba-games-service/internal/domain"
 	"nba-games-service/internal/logging"
+	"nba-games-service/internal/poller"
 	"nba-games-service/internal/providers"
 )
 
@@ -20,26 +24,61 @@ type Handler struct {
 	logger   *slog.Logger
 	now      nowFunc
 	provider providers.GameProvider
+	statusFn func() poller.Status
 }
 
 // NewHandler constructs a Handler with defaults.
-func NewHandler(svc *domain.Service, logger *slog.Logger, provider providers.GameProvider) *Handler {
+func NewHandler(svc *domain.Service, logger *slog.Logger, provider providers.GameProvider, statusFn func() poller.Status) *Handler {
 	return &Handler{
 		svc:      svc,
 		logger:   logger,
 		now:      time.Now,
 		provider: provider,
+		statusFn: statusFn,
 	}
 }
 
 // Health reports the service health.
 func (h *Handler) Health(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if r.Method != nethttp.MethodGet {
+		h.writeError(w, r, nethttp.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if err := r.Context().Err(); err != nil {
+		h.writeError(w, r, nethttp.StatusServiceUnavailable, "shutting down")
+		return
+	}
 	resp := map[string]string{"status": "ok"}
 	h.writeJSON(w, nethttp.StatusOK, resp)
 }
 
+// Ready reports readiness for traffic (e.g., for Kubernetes probes).
+func (h *Handler) Ready(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if r.Method != nethttp.MethodGet {
+		h.writeError(w, r, nethttp.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.statusFn == nil {
+		h.writeJSON(w, nethttp.StatusOK, map[string]string{"status": "ready"})
+		return
+	}
+	if h.statusFn().IsReady() {
+		h.writeJSON(w, nethttp.StatusOK, map[string]string{"status": "ready"})
+		return
+	}
+	msg := h.statusFn().LastError
+	if msg == "" {
+		msg = "not ready"
+	}
+	h.writeError(w, r, nethttp.StatusServiceUnavailable, msg)
+}
+
 // GamesToday returns the current snapshot of games.
 func (h *Handler) GamesToday(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if r.Method != nethttp.MethodGet {
+		h.writeError(w, r, nethttp.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
 	dateParam := r.URL.Query().Get("date")
 	games := h.svc.Games()
 	date := h.now().Format("2006-01-02")
@@ -52,13 +91,24 @@ func (h *Handler) GamesToday(w nethttp.ResponseWriter, r *nethttp.Request) {
 		}
 	}
 
+	if dateParam != "" {
+		if _, err := time.Parse("2006-01-02", dateParam); err != nil {
+			h.writeError(w, r, nethttp.StatusBadRequest, "invalid date format (expected YYYY-MM-DD)")
+			return
+		}
+	}
+
 	if dateParam != "" && h.provider != nil {
 		fetched, err := h.provider.FetchGames(r.Context(), dateParam, tz)
 		if err != nil {
 			if logger != nil {
 				logger.Warn("failed to fetch games", "date", dateParam, "err", err)
 			}
-			h.writeError(w, r, nethttp.StatusBadGateway, "failed to fetch games")
+			msg := "upstream temporarily unavailable"
+			if errors.Is(err, context.DeadlineExceeded) {
+				msg = "upstream timed out"
+			}
+			h.writeUpstreamError(w, r, nethttp.StatusBadGateway, msg)
 			return
 		}
 		games = fetched
@@ -81,10 +131,21 @@ func (h *Handler) GamesToday(w nethttp.ResponseWriter, r *nethttp.Request) {
 
 // GameByID returns a specific game if present.
 func (h *Handler) GameByID(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if r.Method != nethttp.MethodGet {
+		h.writeError(w, r, nethttp.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
 	// Expect path: /games/{id}
-	id := strings.TrimPrefix(r.URL.Path, "/games/")
-	if id == "" || id == "games" {
-		h.writeError(w, r, nethttp.StatusBadRequest, "missing game id")
+	path := strings.TrimPrefix(r.URL.Path, "/games")
+	if path == "" || path == "/" {
+		h.writeError(w, r, nethttp.StatusBadRequest, "invalid game id")
+		return
+	}
+
+	idRaw := strings.TrimPrefix(path, "/")
+	id, err := url.PathUnescape(idRaw)
+	if err != nil || id == "" || id == "games" || strings.ContainsAny(id, " \t/") {
+		h.writeError(w, r, nethttp.StatusBadRequest, "invalid game id")
 		return
 	}
 
@@ -112,4 +173,8 @@ func (h *Handler) writeError(w nethttp.ResponseWriter, r *nethttp.Request, statu
 		body["requestId"] = reqID
 	}
 	h.writeJSON(w, status, body)
+}
+
+func (h *Handler) writeUpstreamError(w nethttp.ResponseWriter, r *nethttp.Request, status int, message string) {
+	h.writeError(w, r, status, message)
 }

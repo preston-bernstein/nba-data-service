@@ -27,9 +27,18 @@ Environment variables (optional; defaults shown). See `.env.example`:
 - `BALDONTLIE_API_KEY` (optional; use if your balldontlie instance requires auth)
 - `BALDONTLIE_TIMEZONE` (default `America/New_York`; controls which “today” date is requested from balldontlie)
 - `BALDONTLIE_MAX_PAGES` (default `5`; cap on paginated fetches)
+- `BALDONTLIE_TIMEOUT` (default `10s`; HTTP client timeout for balldontlie)
 - `LOG_LEVEL` (optional; `debug`/`info`/`warn`/`error`, default `info`)
 - `LOG_FORMAT` (optional; `json` default, or `text`)
   - Use `LOG_FORMAT=text` and `LOG_LEVEL=debug` for local development to get readable output with source hints; keep `json` for prod.
+- Production config (recommended):
+  - `LOG_FORMAT=json`, `LOG_LEVEL=info`
+  - `METRICS_ENABLED=true`, `METRICS_PORT=9090`
+  - `OTEL_EXPORTER_OTLP_ENDPOINT` set only when you have a collector; keep `OTEL_EXPORTER_OTLP_INSECURE=false` in prod
+  - `BALDONTLIE_TIMEOUT=10s` (or lower if your platform is resource constrained)
+- Tier presets (examples; adjust to your quota):
+  - Free: `PROVIDER=balldontlie`, `POLL_INTERVAL=60s`, `BALDONTLIE_MAX_PAGES=1`, `BALDONTLIE_TIMEOUT=10s`
+  - Higher tier: `PROVIDER=balldontlie`, `POLL_INTERVAL=30s`, `BALDONTLIE_MAX_PAGES=5` (or higher if allowed), `BALDONTLIE_TIMEOUT=10s`
 
 ## Run
 Using Make:
@@ -58,6 +67,8 @@ curl http://localhost:4000/games/fixture-1
 
 When using the fixture provider, `games/today` returns two deterministic sample games.
 
+OpenAPI spec: see `api/openapi.yaml` for the service contract (mirrors the documented endpoints).
+
 ## Testing
 ```sh
 make test
@@ -66,6 +77,20 @@ CGO_ENABLED=0 GOCACHE=$(pwd)/.cache/go-build go test ./...
 ```
 
 VS Code: Command Palette → Run Task → `Go: Test (make test)`.
+
+Coverage:
+```sh
+make coverage        # function-level summary
+go tool cover -html=coverage.out  # open line-level view
+```
+
+Benchmarks (local, darwin/arm64, Go 1.21):
+```sh
+CGO_ENABLED=0 GOCACHE=$(pwd)/.cache/go-build go test -bench=. -benchmem ./internal/http ./internal/poller
+```
+- `BenchmarkGamesToday`: ~1.9µs/op, 6.2KB allocs, 22 allocs/op
+- `BenchmarkGameByID`: ~1.7µs/op, 6.0KB allocs, 18 allocs/op
+- `BenchmarkPollerFetchOnce`: ~137ns/op, 448B, 3 allocs/op
 
 ## Build
 ```sh
