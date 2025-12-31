@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"nba-games-service/internal/domain"
-	"nba-games-service/internal/store"
+	"nba-data-service/internal/domain"
+	"nba-data-service/internal/store"
 )
 
 func BenchmarkGamesToday(b *testing.B) {

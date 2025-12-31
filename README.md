@@ -1,6 +1,6 @@
-# NBA Games Service (Go)
+# NBA Data Service (Go)
 
-This service polls upstream NBA providers, normalizes games into the shared data model, caches them in-memory, and exposes HTTP endpoints consumed by the Node BFF. It ships with a fixture provider for local development and a balldontlie client for real upstream data.
+This service polls upstream NBA providers, normalizes games into the shared data model, caches them in-memory (snapshots planned), and exposes HTTP endpoints consumed by the Node BFF. It ships with a fixture provider for local development and a balldontlie client for real upstream data.
 
 ## Features
 - Canonical game/domain models aligned with the portfolio’s shared types.
@@ -111,7 +111,7 @@ direnv allow
 An `.envrc` is included that runs `dotenv .env`. Keep secrets out of git; use `.env.example` as a template.
 
 ## Manual API Testing
-- Postman collection: `postman/nba-games-service.postman_collection.json` (baseUrl defaults to `http://localhost:4000`).
+- Postman collection: `postman/nba-data-service.postman_collection.json` (baseUrl defaults to `http://localhost:4000`).
 - Start the server (fixture provider pre-populates data) and hit the endpoints above.
 
 ## Project Structure

@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"nba-games-service/internal/config"
-	"nba-games-service/internal/domain"
-	"nba-games-service/internal/poller"
-	"nba-games-service/internal/providers/balldontlie"
-	"nba-games-service/internal/store"
+	"nba-data-service/internal/config"
+	"nba-data-service/internal/domain"
+	"nba-data-service/internal/poller"
+	"nba-data-service/internal/providers/balldontlie"
+	"nba-data-service/internal/store"
 )
 
 type stubProvider struct {

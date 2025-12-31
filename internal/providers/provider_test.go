@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"nba-games-service/internal/domain"
+	"nba-data-service/internal/domain"
 )
 
 type testProvider struct{}

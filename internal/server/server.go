@@ -7,14 +7,14 @@ import (
 	"net/http"
 	"strings"
 
-	"nba-games-service/internal/config"
-	"nba-games-service/internal/domain"
-	httpserver "nba-games-service/internal/http"
-	"nba-games-service/internal/logging"
-	"nba-games-service/internal/metrics"
-	"nba-games-service/internal/poller"
-	"nba-games-service/internal/providers"
-	"nba-games-service/internal/store"
+	"nba-data-service/internal/config"
+	"nba-data-service/internal/domain"
+	httpserver "nba-data-service/internal/http"
+	"nba-data-service/internal/logging"
+	"nba-data-service/internal/metrics"
+	"nba-data-service/internal/poller"
+	"nba-data-service/internal/providers"
+	"nba-data-service/internal/store"
 )
 
 type Server struct {

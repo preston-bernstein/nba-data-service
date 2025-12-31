@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"nba-games-service/internal/domain"
-	"nba-games-service/internal/providers"
+	"nba-data-service/internal/domain"
+	"nba-data-service/internal/providers"
 )
 
 // Config controls how the balldontlie client reaches the upstream API.

@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"nba-games-service/internal/metrics"
+	"nba-data-service/internal/metrics"
 )
 
 func TestLoggingMiddlewareSetsRequestIDAndRecords(t *testing.T) {

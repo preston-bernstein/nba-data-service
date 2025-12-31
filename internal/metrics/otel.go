@@ -38,7 +38,7 @@ func Setup(ctx context.Context, cfg TelemetryConfig) (*Recorder, http.Handler, f
 	}
 
 	if cfg.ServiceName == "" {
-		cfg.ServiceName = "nba-games-service"
+		cfg.ServiceName = "nba-data-service"
 	}
 
 	promReader, promHandler, err := promReaderFactory()
@@ -117,7 +117,7 @@ func prometheusComponents() (sdkmetric.Reader, http.Handler, error) {
 }
 
 func newOtelInstruments(provider *sdkmetric.MeterProvider) (*otelInstruments, error) {
-	meter := provider.Meter("nba-games-service")
+	meter := provider.Meter("nba-data-service")
 	ctx := context.Background()
 
 	requests, err := meter.Int64Counter("http_requests_total")

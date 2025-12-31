@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"nba-games-service/internal/logging"
-	"nba-games-service/internal/metrics"
+	"nba-data-service/internal/logging"
+	"nba-data-service/internal/metrics"
 )
 
 // LoggingMiddleware wraps the handler with request logging, request ID support, and metrics.

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"nba-games-service/internal/domain"
-	"nba-games-service/internal/logging"
-	"nba-games-service/internal/poller"
-	"nba-games-service/internal/providers"
+	"nba-data-service/internal/domain"
+	"nba-data-service/internal/logging"
+	"nba-data-service/internal/poller"
+	"nba-data-service/internal/providers"
 )
 
 type nowFunc func() time.Time

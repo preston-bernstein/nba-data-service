@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "NBA Games Service",
-    "description": "Postman collection for the Go games service. Base URL defaults to http://localhost:4000.",
+    "name": "NBA Data Service",
+    "description": "Postman collection for the Go data service. Base URL defaults to http://localhost:4000.",
     "_postman_id": "e0d6d8c1-0000-4b00-9000-000000000000",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },

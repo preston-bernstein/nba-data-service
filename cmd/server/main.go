@@ -6,9 +6,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"nba-games-service/internal/config"
-	"nba-games-service/internal/logging"
-	"nba-games-service/internal/server"
+	"nba-data-service/internal/config"
+	"nba-data-service/internal/logging"
+	"nba-data-service/internal/server"
 )
 
 const appVersion = "dev"
@@ -18,7 +18,7 @@ func main() {
 	logger := logging.NewLogger(logging.Config{
 		Level:   os.Getenv("LOG_LEVEL"),
 		Format:  os.Getenv("LOG_FORMAT"),
-		Service: "nba-games-service",
+		Service: "nba-data-service",
 		Version: appVersion,
 	})
 

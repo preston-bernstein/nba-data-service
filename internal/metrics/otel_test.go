@@ -31,7 +31,7 @@ func TestSetupDisabledReturnsNoHandler(t *testing.T) {
 func TestSetupEnabledInitializesRecorderAndHandler(t *testing.T) {
 	rec, handler, shutdown, err := Setup(context.Background(), TelemetryConfig{
 		Enabled:     true,
-		ServiceName: "nba-games-service",
+		ServiceName: "nba-data-service",
 		// No OTLP endpoint; uses Prometheus exporter only.
 	})
 	if err != nil {
@@ -79,7 +79,7 @@ func TestSetupWithOTLPFactoryOverride(t *testing.T) {
 
 	rec, handler, shutdown, err := Setup(context.Background(), TelemetryConfig{
 		Enabled:      true,
-		ServiceName:  "nba-games-service",
+		ServiceName:  "nba-data-service",
 		OtlpEndpoint: "collector:4318",
 		OtlpInsecure: false,
 	})

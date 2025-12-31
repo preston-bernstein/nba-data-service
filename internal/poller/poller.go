@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"nba-games-service/internal/domain"
-	"nba-games-service/internal/metrics"
-	"nba-games-service/internal/providers"
+	"nba-data-service/internal/domain"
+	"nba-data-service/internal/metrics"
+	"nba-data-service/internal/providers"
 )
 
 const defaultInterval = 30 * time.Second

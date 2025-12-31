@@ -7,9 +7,9 @@ import (
 	"math/rand"
 	"time"
 
-	"nba-games-service/internal/domain"
-	"nba-games-service/internal/logging"
-	"nba-games-service/internal/metrics"
+	"nba-data-service/internal/domain"
+	"nba-data-service/internal/logging"
+	"nba-data-service/internal/metrics"
 )
 
 const (

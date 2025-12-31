@@ -3,7 +3,7 @@ package store
 import (
 	"sync"
 
-	"nba-games-service/internal/domain"
+	"nba-data-service/internal/domain"
 )
 
 // MemoryStore keeps a thread-safe snapshot of games in memory.

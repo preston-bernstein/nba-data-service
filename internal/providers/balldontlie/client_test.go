@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"nba-games-service/internal/providers"
+	"nba-data-service/internal/providers"
 )
 
 func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {

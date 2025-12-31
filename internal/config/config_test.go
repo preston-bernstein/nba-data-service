@@ -51,8 +51,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Metrics.OtlpEndpoint != "" {
 		t.Fatalf("expected empty otlp endpoint by default, got %s", cfg.Metrics.OtlpEndpoint)
 	}
-	if cfg.Metrics.ServiceName != "nba-games-service" {
-		t.Fatalf("expected default service name nba-games-service, got %s", cfg.Metrics.ServiceName)
+	if cfg.Metrics.ServiceName != "nba-data-service" {
+		t.Fatalf("expected default service name nba-data-service, got %s", cfg.Metrics.ServiceName)
 	}
 	if !cfg.Metrics.OtlpInsecure {
 		t.Fatalf("expected otlp insecure default true")
