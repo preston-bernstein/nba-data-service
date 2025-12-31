@@ -4,16 +4,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
-	"nba-data-service/internal/domain"
+	"nba-data-service/internal/app/games"
+	"nba-data-service/internal/http/handlers"
 	"nba-data-service/internal/store"
 )
 
 func TestRouterRoutesKnownPaths(t *testing.T) {
 	ms := store.NewMemoryStore()
-	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	svc := games.NewService(ms)
+	h := handlers.NewHandler(svc, nil, nil, nil)
 
 	router := NewRouter(h)
 
@@ -36,9 +36,8 @@ func TestRouterRoutesKnownPaths(t *testing.T) {
 
 func TestRouterUnknownRouteReturns404(t *testing.T) {
 	ms := store.NewMemoryStore()
-	svc := domain.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
-	h.now = func() time.Time { return time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC) }
+	svc := games.NewService(ms)
+	h := handlers.NewHandler(svc, nil, nil, nil)
 
 	router := NewRouter(h)
 

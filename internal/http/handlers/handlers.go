@@ -1,4 +1,4 @@
-package http
+package handlers
 
 import (
 	"context"
@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/domain"
+	"nba-data-service/internal/http/middleware"
 	"nba-data-service/internal/logging"
 	"nba-data-service/internal/poller"
 	"nba-data-service/internal/providers"
@@ -20,7 +22,7 @@ type nowFunc func() time.Time
 
 // Handler wires HTTP routes to the domain service.
 type Handler struct {
-	svc      *domain.Service
+	svc      *games.Service
 	logger   *slog.Logger
 	now      nowFunc
 	provider providers.GameProvider
@@ -28,7 +30,7 @@ type Handler struct {
 }
 
 // NewHandler constructs a Handler with defaults.
-func NewHandler(svc *domain.Service, logger *slog.Logger, provider providers.GameProvider, statusFn func() poller.Status) *Handler {
+func NewHandler(svc *games.Service, logger *slog.Logger, provider providers.GameProvider, statusFn func() poller.Status) *Handler {
 	return &Handler{
 		svc:      svc,
 		logger:   logger,
@@ -167,7 +169,7 @@ func (h *Handler) writeJSON(w nethttp.ResponseWriter, status int, payload any) {
 }
 
 func (h *Handler) writeError(w nethttp.ResponseWriter, r *nethttp.Request, status int, message string) {
-	reqID := requestIDFromContext(r.Context())
+	reqID := middleware.RequestIDFromContext(r.Context())
 	body := map[string]string{"error": message}
 	if reqID != "" {
 		body["requestId"] = reqID

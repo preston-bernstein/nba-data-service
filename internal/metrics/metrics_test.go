@@ -41,3 +41,24 @@ func TestRecorderTracksRateLimits(t *testing.T) {
 		t.Fatalf("expected last retry-after to be 5s, got %s", got)
 	}
 }
+
+func TestRecorderNilSafeSnapshotAndRecords(t *testing.T) {
+	var rec *Recorder
+	snap := rec.Snapshot("missing")
+	if snap.Calls != 0 || snap.Errors != 0 || snap.RateLimitHits != 0 {
+		t.Fatalf("expected zero snapshot for nil recorder, got %+v", snap)
+	}
+	// Ensure nil recorder does not panic on recorders without otel.
+	rec.RecordProviderAttempt("p", time.Millisecond, errors.New("err"))
+	rec.RecordRateLimit("p", time.Second)
+	rec.RecordHTTPRequest("GET", "/health", 200, time.Millisecond)
+	rec.RecordPollerCycle(time.Millisecond, nil)
+}
+
+func TestRecorderSnapshotMissingProviderReturnsZero(t *testing.T) {
+	rec := NewRecorder()
+	snap := rec.Snapshot("unknown")
+	if snap.Calls != 0 || snap.Errors != 0 || snap.RateLimitHits != 0 {
+		t.Fatalf("expected zero snapshot, got %+v", snap)
+	}
+}

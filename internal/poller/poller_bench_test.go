@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/domain"
 	"nba-data-service/internal/store"
 )
@@ -36,7 +37,7 @@ func BenchmarkPollerFetchOnce(b *testing.B) {
 	}
 
 	s := store.NewMemoryStore()
-	svc := domain.NewService(s)
+	svc := games.NewService(s)
 	pl := New(p, svc, nil, nil, time.Second)
 	ctx := context.Background()
 
