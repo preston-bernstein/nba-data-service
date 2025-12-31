@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/domain"
 	"nba-data-service/internal/store"
 )
@@ -53,7 +54,7 @@ func TestPollerFetchesAndStoresGames(t *testing.T) {
 	}
 
 	s := store.NewMemoryStore()
-	svc := domain.NewService(s)
+	svc := games.NewService(s)
 
 	p := New(provider, svc, nil, nil, 10*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -88,7 +89,7 @@ func TestPollerStopsOnContextCancel(t *testing.T) {
 	}
 
 	s := store.NewMemoryStore()
-	svc := domain.NewService(s)
+	svc := games.NewService(s)
 
 	p := New(provider, svc, nil, nil, 5*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -118,7 +119,7 @@ func TestPollerStopIsIdempotent(t *testing.T) {
 	}
 
 	s := store.NewMemoryStore()
-	svc := domain.NewService(s)
+	svc := games.NewService(s)
 
 	p := New(provider, svc, nil, nil, time.Hour)
 
@@ -136,7 +137,7 @@ func TestPollerStartIsIdempotent(t *testing.T) {
 	}
 
 	s := store.NewMemoryStore()
-	svc := domain.NewService(s)
+	svc := games.NewService(s)
 
 	p := New(provider, svc, nil, nil, time.Hour)
 
@@ -158,7 +159,7 @@ func TestPollerStatusTracksFailuresAndSuccess(t *testing.T) {
 	}
 
 	s := store.NewMemoryStore()
-	svc := domain.NewService(s)
+	svc := games.NewService(s)
 
 	p := New(provider, svc, nil, nil, time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -198,7 +199,7 @@ func TestPollerLogsOnErrorAndSuccess(t *testing.T) {
 		err: errors.New("fail"),
 	}
 	s := store.NewMemoryStore()
-	svc := domain.NewService(s)
+	svc := games.NewService(s)
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 
 	p := New(provider, svc, logger, nil, time.Second)

@@ -1,13 +1,15 @@
-package domain
+package games
+
+import "nba-data-service/internal/domain"
 
 // Store defines the contract for persisting and retrieving games.
 type Store interface {
-	ListGames() []Game
-	GetGame(id string) (Game, bool)
-	SetGames(games []Game)
+	ListGames() []domain.Game
+	GetGame(id string) (domain.Game, bool)
+	SetGames(games []domain.Game)
 }
 
-// Service coordinates domain operations using a Store.
+// Service coordinates game operations using a Store.
 type Service struct {
 	store Store
 }
@@ -18,16 +20,16 @@ func NewService(store Store) *Service {
 }
 
 // Games returns the current set of games.
-func (s *Service) Games() []Game {
+func (s *Service) Games() []domain.Game {
 	return s.store.ListGames()
 }
 
 // GameByID returns a single game if present.
-func (s *Service) GameByID(id string) (Game, bool) {
+func (s *Service) GameByID(id string) (domain.Game, bool) {
 	return s.store.GetGame(id)
 }
 
 // ReplaceGames swaps the in-memory games with a new snapshot.
-func (s *Service) ReplaceGames(games []Game) {
+func (s *Service) ReplaceGames(games []domain.Game) {
 	s.store.SetGames(games)
 }

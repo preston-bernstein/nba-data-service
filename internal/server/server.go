@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"strings"
 
+	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/config"
-	"nba-data-service/internal/domain"
 	httpserver "nba-data-service/internal/http"
+	"nba-data-service/internal/http/handlers"
+	"nba-data-service/internal/http/middleware"
 	"nba-data-service/internal/logging"
 	"nba-data-service/internal/metrics"
 	"nba-data-service/internal/poller"
@@ -21,7 +23,7 @@ type Server struct {
 	cfg           config.Config
 	logger        *slog.Logger
 	metrics       *metrics.Recorder
-	domainService *domain.Service
+	domainService *games.Service
 	httpServer    httpServer
 	metricsServer httpServer
 	poller        Poller
@@ -89,7 +91,7 @@ func newServerWithMetrics(cfg config.Config, logger *slog.Logger, provider provi
 }
 
 // newServerWithDeps is used for testing to inject custom components.
-func newServerWithDeps(cfg config.Config, logger *slog.Logger, svc *domain.Service, httpSrv httpServer, plr Poller) *Server {
+func newServerWithDeps(cfg config.Config, logger *slog.Logger, svc *games.Service, httpSrv httpServer, plr Poller) *Server {
 	return &Server{
 		cfg:           cfg,
 		logger:        logger,
@@ -99,23 +101,23 @@ func newServerWithDeps(cfg config.Config, logger *slog.Logger, svc *domain.Servi
 	}
 }
 
-func buildDomainService() *domain.Service {
+func buildDomainService() *games.Service {
 	memoryStore := store.NewMemoryStore()
-	return domain.NewService(memoryStore)
+	return games.NewService(memoryStore)
 }
 
-func buildHTTPServer(cfg config.Config, svc *domain.Service, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder, plr Poller) httpServer {
+func buildHTTPServer(cfg config.Config, svc *games.Service, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder, plr Poller) httpServer {
 	var statusFn func() poller.Status
 	if plr != nil {
 		statusFn = plr.Status
 	}
 
-	handler := httpserver.NewHandler(svc, logger, provider, statusFn)
+	handler := handlers.NewHandler(svc, logger, provider, statusFn)
 	router := httpserver.NewRouter(handler)
 	if logger == nil {
 		logger = logging.NewLogger(logging.Config{})
 	}
-	wrapped := httpserver.LoggingMiddleware(logger, recorder, router)
+	wrapped := middleware.LoggingMiddleware(logger, recorder, router)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

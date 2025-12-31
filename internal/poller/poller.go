@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"nba-data-service/internal/domain"
+	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/metrics"
 	"nba-data-service/internal/providers"
 )
@@ -16,7 +16,7 @@ const defaultInterval = 30 * time.Second
 // Poller fetches games on an interval and updates the domain service.
 type Poller struct {
 	provider providers.GameProvider
-	service  *domain.Service
+	service  *games.Service
 	logger   *slog.Logger
 	metrics  *metrics.Recorder
 	interval time.Duration
@@ -48,7 +48,7 @@ func (s Status) IsReady() bool {
 }
 
 // New constructs a Poller with sane defaults.
-func New(provider providers.GameProvider, service *domain.Service, logger *slog.Logger, recorder *metrics.Recorder, interval time.Duration) *Poller {
+func New(provider providers.GameProvider, service *games.Service, logger *slog.Logger, recorder *metrics.Recorder, interval time.Duration) *Poller {
 	if interval <= 0 {
 		interval = defaultInterval
 	}

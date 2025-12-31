@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestSetupDisabledReturnsNoHandler(t *testing.T) {
@@ -100,6 +102,101 @@ func TestBuildOTLPReaderUsesEndpoint(t *testing.T) {
 	}
 	if reader == nil {
 		t.Fatalf("expected reader")
+	}
+}
+
+func TestBuildOTLPReaderWithBadEndpointFails(t *testing.T) {
+	if _, err := buildOTLPReader(context.Background(), "://bad-endpoint", true); err == nil {
+		t.Fatalf("expected error for bad endpoint")
+	}
+}
+
+func TestSetupDefaultsServiceNameWhenEmpty(t *testing.T) {
+	rec, handler, shutdown, err := Setup(context.Background(), TelemetryConfig{
+		Enabled: true,
+		// no service name set; should use default
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if rec == nil || handler == nil || shutdown == nil {
+		t.Fatalf("expected recorder, handler, shutdown")
+	}
+}
+
+func TestPrometheusComponentsReturnsReaderAndHandler(t *testing.T) {
+	reader, handler, err := prometheusComponents()
+	if err != nil {
+		t.Fatalf("expected prom components, got err %v", err)
+	}
+	if reader == nil || handler == nil {
+		t.Fatalf("expected reader and handler")
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	handler.ServeHTTP(rr, req)
+	if rr.Code == 0 {
+		t.Fatalf("expected handler to write status")
+	}
+}
+
+func TestOtelInstrumentsRecordingDoesNotPanic(t *testing.T) {
+	// nil receiver should be a no-op
+	var nilInst *otelInstruments
+	nilInst.recordHTTPRequest("GET", "/health", 200, time.Millisecond)
+	nilInst.recordProviderAttempt("p", time.Millisecond, nil)
+	nilInst.recordRateLimit("p", time.Second)
+	nilInst.recordPoller(time.Millisecond, errors.New("err"))
+
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewManualReader()))
+	inst, err := newOtelInstruments(provider)
+	if err != nil {
+		t.Fatalf("expected instruments, got %v", err)
+	}
+	inst.recordHTTPRequest("GET", "/games/today", 200, 50*time.Millisecond)
+	inst.recordProviderAttempt("balldontlie", 75*time.Millisecond, nil)
+	inst.recordProviderAttempt("balldontlie", 90*time.Millisecond, errors.New("fail"))
+	inst.recordRateLimit("balldontlie", 2*time.Second)
+	inst.recordRateLimit("balldontlie", 0)
+	inst.recordPoller(120*time.Millisecond, nil)
+	inst.recordPoller(130*time.Millisecond, errors.New("poller"))
+}
+
+func TestSetupWithOTLPEnabledUsesDefaultFactories(t *testing.T) {
+	ctx := context.Background()
+	rec, handler, shutdown, err := Setup(ctx, TelemetryConfig{
+		Enabled:      true,
+		ServiceName:  "nba-data-service",
+		OtlpEndpoint: "localhost:4318",
+		OtlpInsecure: true,
+	})
+	if err != nil {
+		t.Skipf("otlp reader not available in env: %v", err)
+	}
+	if rec == nil || handler == nil || shutdown == nil {
+		t.Fatalf("expected recorder, handler, shutdown")
+	}
+	rec.RecordHTTPRequest("GET", "/ready", 200, time.Millisecond)
+	rec.RecordPollerCycle(time.Millisecond, nil)
+	rec.RecordProviderAttempt("fixture", time.Millisecond, nil)
+}
+
+func TestNewOtelInstrumentsRegistersAllMetrics(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	inst, err := newOtelInstruments(provider)
+	if err != nil {
+		t.Fatalf("expected instruments, got %v", err)
+	}
+	if inst == nil || inst.meter == nil {
+		t.Fatalf("expected instruments and meter")
+	}
+
+	// Record once and ensure we can pull data without error.
+	inst.recordProviderAttempt("fixture", 10*time.Millisecond, nil)
+	if err := reader.Collect(context.Background(), &metricdata.ResourceMetrics{}); err != nil {
+		t.Fatalf("failed to collect metrics: %v", err)
 	}
 }
 

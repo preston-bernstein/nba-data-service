@@ -1,9 +1,13 @@
 package http
 
-import nethttp "net/http"
+import (
+	nethttp "net/http"
+
+	"nba-data-service/internal/http/handlers"
+)
 
 // NewRouter registers HTTP routes on a ServeMux.
-func NewRouter(handler *Handler) nethttp.Handler {
+func NewRouter(handler *handlers.Handler) nethttp.Handler {
 	mux := nethttp.NewServeMux()
 	mux.HandleFunc("/health", handler.Health)
 	mux.HandleFunc("/ready", handler.Ready)

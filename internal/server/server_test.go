@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/config"
 	"nba-data-service/internal/domain"
 	"nba-data-service/internal/poller"
@@ -348,7 +349,7 @@ func TestServerHandlesProviderErrorGracefully(t *testing.T) {
 }
 
 func TestGracefulShutdownCallsStopAndShutdown(t *testing.T) {
-	svc := domain.NewService(store.NewMemoryStore())
+	svc := games.NewService(store.NewMemoryStore())
 	p := &stubPoller{}
 	httpSrv := &stubHTTPServer{}
 
@@ -364,7 +365,7 @@ func TestGracefulShutdownCallsStopAndShutdown(t *testing.T) {
 }
 
 func TestGracefulShutdownTimesOutLongRunningShutdown(t *testing.T) {
-	svc := domain.NewService(store.NewMemoryStore())
+	svc := games.NewService(store.NewMemoryStore())
 	p := &stubPoller{}
 
 	blocking := &blockingHTTPServer{
@@ -395,7 +396,7 @@ func TestGracefulShutdownTimesOutLongRunningShutdown(t *testing.T) {
 }
 
 func TestGracefulShutdownContinuesWhenPollerStopErrors(t *testing.T) {
-	svc := domain.NewService(store.NewMemoryStore())
+	svc := games.NewService(store.NewMemoryStore())
 	p := &stubPoller{err: errors.New("stop failure")}
 	httpSrv := &stubHTTPServer{}
 
@@ -433,7 +434,7 @@ func (e *errHTTPServer) Handler() http.Handler {
 }
 
 func TestServerStartHandlesListenErrorAndStops(t *testing.T) {
-	svc := domain.NewService(store.NewMemoryStore())
+	svc := games.NewService(store.NewMemoryStore())
 	plr := &stubPoller{}
 	httpSrv := &errHTTPServer{}
 
@@ -484,7 +485,7 @@ func TestRunCancelsAndStopsComponents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	svc := domain.NewService(store.NewMemoryStore())
+	svc := games.NewService(store.NewMemoryStore())
 	plr := &stubPoller{}
 	httpSrv := &closeableHTTPServer{}
 
