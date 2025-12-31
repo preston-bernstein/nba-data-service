@@ -1,0 +1,26 @@
+# Binaries
+bin/
+/server
+
+# Build cache
+.cache/
+.gocache/
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# Environment
+.env
+
+# Coverage
+coverage.out
+
+# Logs
+*.log
+
+# Internal governance docs
+AGENTS*
+docs-internal/
