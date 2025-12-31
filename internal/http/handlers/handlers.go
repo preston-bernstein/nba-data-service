@@ -16,6 +16,7 @@ import (
 	"nba-data-service/internal/logging"
 	"nba-data-service/internal/poller"
 	"nba-data-service/internal/providers"
+	"nba-data-service/internal/snapshots"
 )
 
 type nowFunc func() time.Time
@@ -23,19 +24,19 @@ type nowFunc func() time.Time
 // Handler wires HTTP routes to the domain service.
 type Handler struct {
 	svc      *games.Service
+	snaps    snapshots.Store
 	logger   *slog.Logger
 	now      nowFunc
-	provider providers.GameProvider
 	statusFn func() poller.Status
 }
 
 // NewHandler constructs a Handler with defaults.
-func NewHandler(svc *games.Service, logger *slog.Logger, provider providers.GameProvider, statusFn func() poller.Status) *Handler {
+func NewHandler(svc *games.Service, snaps snapshots.Store, logger *slog.Logger, statusFn func() poller.Status) *Handler {
 	return &Handler{
 		svc:      svc,
+		snaps:    snaps,
 		logger:   logger,
 		now:      time.Now,
-		provider: provider,
 		statusFn: statusFn,
 	}
 }
@@ -100,25 +101,29 @@ func (h *Handler) GamesToday(w nethttp.ResponseWriter, r *nethttp.Request) {
 		}
 	}
 
-	if dateParam != "" && h.provider != nil {
-		fetched, err := h.provider.FetchGames(r.Context(), dateParam, tz)
+	// For explicit date queries, serve snapshots only (no live upstream fetch).
+	if dateParam != "" {
+		snap, err := h.loadSnapshot(dateParam)
 		if err != nil {
-			if logger != nil {
-				logger.Warn("failed to fetch games", "date", dateParam, "err", err)
-			}
-			msg := "upstream temporarily unavailable"
-			if errors.Is(err, context.DeadlineExceeded) {
-				msg = "upstream timed out"
-			}
-			h.writeUpstreamError(w, r, nethttp.StatusBadGateway, msg)
+			h.writeUpstreamError(w, r, nethttp.StatusBadGateway, "snapshot unavailable")
 			return
 		}
-		games = fetched
-		date = dateParam
+		games = snap.Games
+		date = snap.Date
 		if logger != nil {
-			logger.Info("fetched games", "date", date, "provider", "external", "count", len(games))
+			logger.Info("served snapshot games", "date", date, "provider", "snapshot", "count", len(games))
 		}
 	} else {
+		// Default path: serve cache; if empty, try snapshot for the computed date.
+		if len(games) == 0 {
+			if snap, err := h.loadSnapshot(date); err == nil {
+				games = snap.Games
+				date = snap.Date
+				if logger != nil {
+					logger.Info("served snapshot games", "date", date, "provider", "snapshot", "count", len(games))
+				}
+			}
+		}
 		if logger != nil {
 			logger.Info("served cached games", "date", date, "provider", "cache", "count", len(games))
 		}
@@ -179,4 +184,15 @@ func (h *Handler) writeError(w nethttp.ResponseWriter, r *nethttp.Request, statu
 
 func (h *Handler) writeUpstreamError(w nethttp.ResponseWriter, r *nethttp.Request, status int, message string) {
 	h.writeError(w, r, status, message)
+}
+
+func (h *Handler) loadSnapshot(date string) (domain.TodayResponse, error) {
+	if h.snaps == nil {
+		return domain.TodayResponse{}, errors.New("snapshot store not configured")
+	}
+	ctx := context.Background()
+	if err := ctx.Err(); err != nil {
+		return domain.TodayResponse{}, err
+	}
+	return h.snaps.LoadGames(date)
 }

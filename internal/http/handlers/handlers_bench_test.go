@@ -8,6 +8,7 @@ import (
 
 	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/domain"
+	"nba-data-service/internal/snapshots"
 	"nba-data-service/internal/store"
 )
 
@@ -27,7 +28,7 @@ func BenchmarkGamesToday(b *testing.B) {
 		},
 	})
 	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(svc, snapshots.NewFSStore(b.TempDir()), nil, nil)
 	h.now = func() time.Time { return now }
 
 	req := httptest.NewRequest(http.MethodGet, "/games/today", nil)

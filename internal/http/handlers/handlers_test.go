@@ -16,16 +16,14 @@ import (
 	"nba-data-service/internal/store"
 )
 
-type stubProvider struct {
-	games []domain.Game
-	err   error
+type stubSnapshots struct {
+	resp domain.TodayResponse
+	err  error
 }
 
-func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
-	_ = ctx
+func (s *stubSnapshots) LoadGames(date string) (domain.TodayResponse, error) {
 	_ = date
-	_ = tz
-	return s.games, s.err
+	return s.resp, s.err
 }
 
 func TestHealth(t *testing.T) {
@@ -126,11 +124,14 @@ func TestGamesTodayWithDateUsesProvider(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := games.NewService(ms)
 
-	provider := &stubProvider{
-		games: []domain.Game{{ID: "provider-game"}},
+	snaps := &stubSnapshots{
+		resp: domain.TodayResponse{
+			Date:  "2024-02-01",
+			Games: []domain.Game{{ID: "snapshot-game"}},
+		},
 	}
 
-	h := NewHandler(svc, nil, provider, nil)
+	h := NewHandler(svc, snaps, nil, nil)
 
 	req := httptest.NewRequest("GET", "/games?date=2024-02-01", nil)
 	rr := httptest.NewRecorder()
@@ -149,7 +150,7 @@ func TestGamesTodayWithDateUsesProvider(t *testing.T) {
 	if resp.Date != "2024-02-01" {
 		t.Fatalf("expected date to reflect query param, got %s", resp.Date)
 	}
-	if len(resp.Games) != 1 || resp.Games[0].ID != "provider-game" {
+	if len(resp.Games) != 1 || resp.Games[0].ID != "snapshot-game" {
 		t.Fatalf("expected provider games, got %+v", resp.Games)
 	}
 }
@@ -157,7 +158,7 @@ func TestGamesTodayWithDateUsesProvider(t *testing.T) {
 func TestGamesTodayWithInvalidDateReturnsBadRequest(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, &stubProvider{}, nil)
+	h := NewHandler(svc, nil, nil, nil)
 
 	req := httptest.NewRequest("GET", "/games?date=not-a-date", nil)
 	rr := httptest.NewRecorder()
@@ -173,11 +174,11 @@ func TestGamesTodayLogsUpstreamErrors(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := games.NewService(ms)
 
-	provider := &stubProvider{
-		err: context.DeadlineExceeded,
+	snaps := &stubSnapshots{
+		err: errors.New("missing snapshot"),
 	}
 
-	h := NewHandler(svc, nil, provider, nil)
+	h := NewHandler(svc, snaps, nil, nil)
 
 	req := httptest.NewRequest("GET", "/games?date=2024-02-01", nil)
 	rr := httptest.NewRecorder()
@@ -444,11 +445,11 @@ func TestGamesTodayUpstreamErrorsReturnBadGateway(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := games.NewService(ms)
 
-	provider := &stubProvider{
+	snaps := &stubSnapshots{
 		err: errors.New("boom"),
 	}
 
-	h := NewHandler(svc, nil, provider, nil)
+	h := NewHandler(svc, snaps, nil, nil)
 
 	req := httptest.NewRequest("GET", "/games?date=2024-02-01", nil)
 	rr := httptest.NewRecorder()

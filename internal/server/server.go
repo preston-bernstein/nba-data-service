@@ -16,6 +16,7 @@ import (
 	"nba-data-service/internal/metrics"
 	"nba-data-service/internal/poller"
 	"nba-data-service/internal/providers"
+	"nba-data-service/internal/snapshots"
 	"nba-data-service/internal/store"
 )
 
@@ -112,7 +113,8 @@ func buildHTTPServer(cfg config.Config, svc *games.Service, logger *slog.Logger,
 		statusFn = plr.Status
 	}
 
-	handler := handlers.NewHandler(svc, logger, provider, statusFn)
+	snapStore := snapshots.NewFSStore("data/snapshots")
+	handler := handlers.NewHandler(svc, snapStore, logger, statusFn)
 	router := httpserver.NewRouter(handler)
 	if logger == nil {
 		logger = logging.NewLogger(logging.Config{})
