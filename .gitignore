@@ -21,6 +21,9 @@ coverage.out
 # Logs
 *.log
 
+# Local snapshot data
+data/snapshots/
+
 # Internal governance docs
 AGENTS*
 docs-internal/
