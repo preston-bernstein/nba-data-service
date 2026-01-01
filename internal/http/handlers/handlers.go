@@ -42,6 +42,21 @@ func NewHandler(svc *games.Service, snaps snapshots.Store, logger *slog.Logger, 
 }
 
 // Health reports the service health.
+func (h *Handler) ServeHTTP(w nethttp.ResponseWriter, r *nethttp.Request) {
+	switch {
+	case r.URL.Path == "/health":
+		h.Health(w, r)
+	case r.URL.Path == "/ready":
+		h.Ready(w, r)
+	case r.URL.Path == "/games" || r.URL.Path == "/games/today":
+		h.GamesToday(w, r)
+	case strings.HasPrefix(r.URL.Path, "/games/"):
+		h.GameByID(w, r)
+	default:
+		h.writeError(w, r, nethttp.StatusNotFound, "not found")
+	}
+}
+
 func (h *Handler) Health(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if r.Method != nethttp.MethodGet {
 		h.writeError(w, r, nethttp.StatusMethodNotAllowed, "method not allowed")

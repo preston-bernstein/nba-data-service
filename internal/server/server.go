@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/config"
@@ -34,6 +35,8 @@ type Server struct {
 // New constructs a server with default provider and poller wiring.
 func New(cfg config.Config, logger *slog.Logger) *Server {
 	provider := selectProvider(cfg, logger)
+	// Apply a shared rate limiter to respect upstream quotas (default 1/min if poller interval < limiter interval).
+	provider = providers.NewRateLimitedProvider(provider, time.Minute, logger)
 	return newServerWithProvider(cfg, logger, provider)
 }
 
@@ -113,9 +116,26 @@ func buildHTTPServer(cfg config.Config, svc *games.Service, logger *slog.Logger,
 		statusFn = plr.Status
 	}
 
-	snapStore := snapshots.NewFSStore("data/snapshots")
+	snapPath := "data/snapshots"
+	snapStore := snapshots.NewFSStore(snapPath)
+	snapWriter := snapshots.NewWriter(snapPath, cfg.Snapshots.RetentionDays)
+	syncer := snapshots.NewSyncer(provider, snapWriter, snapshots.SyncConfig{
+		Enabled:      cfg.Snapshots.Enabled,
+		Days:         cfg.Snapshots.Days,
+		FutureDays:   cfg.Snapshots.FutureDays,
+		Interval:     cfg.Snapshots.Interval,
+		DailyHourUTC: cfg.Snapshots.DailyHourUTC,
+	}, logger)
+	go syncer.Run(context.Background())
 	handler := handlers.NewHandler(svc, snapStore, logger, statusFn)
+	admin := handlers.NewAdminHandler(svc, snapWriter, provider, cfg.Snapshots.AdminToken, logger)
 	router := httpserver.NewRouter(handler)
+	// Optionally mount admin refresh endpoint if token is set.
+	if admin != nil && cfg.Snapshots.AdminToken != "" {
+		if mux, ok := router.(*http.ServeMux); ok {
+			mux.HandleFunc("/admin/snapshots/refresh", admin.RefreshSnapshots)
+		}
+	}
 	if logger == nil {
 		logger = logging.NewLogger(logging.Config{})
 	}
