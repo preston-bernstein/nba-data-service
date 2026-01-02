@@ -2,18 +2,21 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
 	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/domain"
 	"nba-data-service/internal/http/middleware"
+	"nba-data-service/internal/logging"
 	"nba-data-service/internal/poller"
+	"nba-data-service/internal/snapshots"
 	"nba-data-service/internal/store"
+	"nba-data-service/internal/testutil"
 )
 
 type stubSnapshots struct {
@@ -27,85 +30,47 @@ func (s *stubSnapshots) LoadGames(date string) (domain.TodayResponse, error) {
 }
 
 func TestHealth(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
-	req := httptest.NewRequest("GET", "/health", nil)
-	rr := httptest.NewRecorder()
-
-	h.Health(rr, req)
-
-	if rr.Code != 200 {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	rr := testutil.Serve(h, http.MethodGet, "/health", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
 
 	var resp map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed decoding health response: %v", err)
-	}
+	testutil.DecodeJSON(t, rr, &resp)
 	if resp["status"] != "ok" {
 		t.Fatalf("expected status ok, got %s", resp["status"])
 	}
 }
 
 func TestHealthShuttingDownReturnsServiceUnavailable(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
-	req := httptest.NewRequest("GET", "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	ctx, cancel := context.WithCancel(req.Context())
 	cancel()
 	req = req.WithContext(ctx)
-	rr := httptest.NewRecorder()
+	rr := testutil.ServeRequest(http.HandlerFunc(h.Health), req)
 
-	h.Health(rr, req)
-
-	if rr.Code != 503 {
-		t.Fatalf("expected 503, got %d", rr.Code)
-	}
+	testutil.AssertStatus(t, rr, http.StatusServiceUnavailable)
 	var resp map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed decoding health response: %v", err)
-	}
+	testutil.DecodeJSON(t, rr, &resp)
 	if resp["error"] != "shutting down" {
 		t.Fatalf("unexpected error %q", resp["error"])
 	}
 }
 
 func TestGamesToday(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	game := domain.Game{
-		ID:        "game-1",
-		Provider:  "test",
-		HomeTeam:  domain.Team{ID: "home", Name: "Home", ExternalID: 1},
-		AwayTeam:  domain.Team{ID: "away", Name: "Away", ExternalID: 2},
-		StartTime: time.Date(2024, 1, 1, 15, 30, 0, 0, time.UTC).Format(time.RFC3339),
-		Status:    domain.StatusScheduled,
-		Score:     domain.Score{Home: 0, Away: 0},
-		Meta:      domain.GameMeta{Season: "2023-2024", UpstreamGameID: 123},
-	}
-	ms.SetGames([]domain.Game{game})
-
-	h := NewHandler(svc, nil, nil, nil)
+	game := testutil.SampleGame("game-1")
+	game.StartTime = time.Date(2024, 1, 1, 15, 30, 0, 0, time.UTC).Format(time.RFC3339)
+	h := NewHandler(testutil.NewServiceWithGames([]domain.Game{game}), nil, nil, nil)
 	fixedNow := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return fixedNow }
 
-	req := httptest.NewRequest("GET", "/games/today", nil)
-	rr := httptest.NewRecorder()
-
-	h.GamesToday(rr, req)
-
-	if rr.Code != 200 {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	rr := testutil.Serve(h, http.MethodGet, "/games/today", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
 
 	var resp domain.TodayResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed decoding games response: %v", err)
-	}
+	testutil.DecodeJSON(t, rr, &resp)
 
 	if resp.Date != "2024-01-02" {
 		t.Fatalf("expected date 2024-01-02, got %s", resp.Date)
@@ -121,31 +86,17 @@ func TestGamesToday(t *testing.T) {
 }
 
 func TestGamesTodayWithDateUsesProvider(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-
 	snaps := &stubSnapshots{
-		resp: domain.TodayResponse{
-			Date:  "2024-02-01",
-			Games: []domain.Game{{ID: "snapshot-game"}},
-		},
+		resp: testutil.SampleTodayResponse("2024-02-01", "snapshot-game"),
 	}
 
-	h := NewHandler(svc, snaps, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), snaps, nil, nil)
 
-	req := httptest.NewRequest("GET", "/games?date=2024-02-01", nil)
-	rr := httptest.NewRecorder()
-
-	h.GamesToday(rr, req)
-
-	if rr.Code != 200 {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-02-01", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
 
 	var resp domain.TodayResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed decoding games response: %v", err)
-	}
+	testutil.DecodeJSON(t, rr, &resp)
 
 	if resp.Date != "2024-02-01" {
 		t.Fatalf("expected date to reflect query param, got %s", resp.Date)
@@ -156,61 +107,125 @@ func TestGamesTodayWithDateUsesProvider(t *testing.T) {
 }
 
 func TestGamesTodayWithInvalidDateReturnsBadRequest(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
-	req := httptest.NewRequest("GET", "/games?date=not-a-date", nil)
-	rr := httptest.NewRecorder()
-
-	h.GamesToday(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
+	rr := testutil.Serve(h, http.MethodGet, "/games?date=not-a-date", nil)
+	testutil.AssertStatus(t, rr, http.StatusBadRequest)
 }
 
 func TestGamesTodayLogsUpstreamErrors(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-
 	snaps := &stubSnapshots{
 		err: errors.New("missing snapshot"),
 	}
 
-	h := NewHandler(svc, snaps, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), snaps, nil, nil)
 
-	req := httptest.NewRequest("GET", "/games?date=2024-02-01", nil)
-	rr := httptest.NewRecorder()
+	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-02-01", nil)
+	testutil.AssertStatus(t, rr, http.StatusBadGateway)
+}
 
-	h.GamesToday(rr, req)
+func TestGamesTodaySnapshotMissingReturnsBadGateway(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
-	if rr.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502, got %d", rr.Code)
+	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-04-01", nil)
+
+	testutil.AssertStatus(t, rr, http.StatusBadGateway)
+}
+
+func TestGamesTodayCacheEmptyLoadsSnapshotAndLogs(t *testing.T) {
+	snaps := &stubSnapshots{
+		resp: testutil.SampleTodayResponse("2024-05-01", "snap-cache"),
+	}
+	logger, buf := testutil.NewBufferLogger()
+	h := NewHandler(testutil.NewServiceWithGames(nil), snaps, logger, nil)
+
+	rr := testutil.Serve(h, http.MethodGet, "/games/today", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+
+	var resp domain.TodayResponse
+	testutil.DecodeJSON(t, rr, &resp)
+	if resp.Date != "2024-05-01" || resp.Games[0].ID != "snap-cache" {
+		t.Fatalf("expected snapshot fallback, got %+v", resp)
+	}
+	if buf.Len() == 0 {
+		t.Fatalf("expected logging when serving snapshot")
+	}
+}
+
+func TestGamesTodayDateWithNilSnapshotsReturnsBadGateway(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
+	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-06-01", nil)
+	testutil.AssertStatus(t, rr, http.StatusBadGateway)
+}
+
+func TestGamesTodayRejectsInvalidTimezoneAndReturnsOKWithDefault(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
+	rr := testutil.Serve(h, http.MethodGet, "/games/today?tz=Bad/Timezone", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+}
+
+func TestGamesTodayValidTimezoneAdjustsDate(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
+	loc, _ := time.LoadLocation("America/New_York")
+	h.now = func() time.Time { return time.Date(2024, 3, 2, 2, 0, 0, 0, loc) } // should map to 2024-03-02 local
+	rr := testutil.Serve(h, http.MethodGet, "/games/today?tz=America/New_York", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+	var resp domain.TodayResponse
+	testutil.DecodeJSON(t, rr, &resp)
+	if resp.Date != "2024-03-02" {
+		t.Fatalf("expected tz-adjusted date, got %s", resp.Date)
+	}
+}
+
+func TestGamesTodayServesCachedGamesLogs(t *testing.T) {
+	logger, buf := testutil.NewBufferLogger()
+	game := testutil.SampleGame("cached-1")
+	game.StartTime = time.Now().Format(time.RFC3339)
+	h := NewHandler(testutil.NewServiceWithGames([]domain.Game{game}), nil, logger, nil)
+	rr := testutil.Serve(h, http.MethodGet, "/games/today", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+	if buf.Len() == 0 {
+		t.Fatalf("expected log entry for cached games")
+	}
+}
+
+func TestGamesTodaySnapshotErrorFallsBackToEmptyCache(t *testing.T) {
+	logger, _ := testutil.NewBufferLogger()
+	h := NewHandler(testutil.NewServiceWithGames(nil), &stubSnapshots{err: errors.New("boom")}, logger, nil)
+	rr := testutil.Serve(h, http.MethodGet, "/games/today", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+	var resp domain.TodayResponse
+	testutil.DecodeJSON(t, rr, &resp)
+	if resp.Date == "" {
+		t.Fatalf("expected date to be set")
+	}
+	if len(resp.Games) != 0 {
+		t.Fatalf("expected empty games when snapshot fetch fails, got %d", len(resp.Games))
+	}
+}
+
+func TestGamesTodayDateWithLoggerLogsSnapshot(t *testing.T) {
+	logger, buf := testutil.NewBufferLogger()
+	snaps := &stubSnapshots{resp: testutil.SampleTodayResponse("2024-07-01", "logged-snap")}
+	h := NewHandler(testutil.NewServiceWithGames(nil), snaps, logger, nil)
+	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-07-01", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+	if buf.Len() == 0 {
+		t.Fatalf("expected snapshot log when logger provided")
 	}
 }
 
 func TestGamesTodayInvalidTimezoneFallsBack(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
 	fixedNow := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
 	h.now = func() time.Time { return fixedNow }
 
-	req := httptest.NewRequest("GET", "/games/today?tz=invalid-timezone", nil)
-	rr := httptest.NewRecorder()
-
-	h.GamesToday(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	rr := testutil.Serve(h, http.MethodGet, "/games/today?tz=invalid-timezone", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
 
 	var resp domain.TodayResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed decoding games response: %v", err)
-	}
+	testutil.DecodeJSON(t, rr, &resp)
 
 	if resp.Date != "2024-01-02" {
 		t.Fatalf("expected date 2024-01-02, got %s", resp.Date)
@@ -218,36 +233,16 @@ func TestGamesTodayInvalidTimezoneFallsBack(t *testing.T) {
 }
 
 func TestGameByID(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
+	game := testutil.SampleGame("id-1")
+	game.StartTime = time.Date(2024, 1, 1, 15, 30, 0, 0, time.UTC).Format(time.RFC3339)
+	h := NewHandler(testutil.NewServiceWithGames([]domain.Game{game}), nil, nil, nil)
 
-	game := domain.Game{
-		ID:        "id-1",
-		Provider:  "test",
-		HomeTeam:  domain.Team{ID: "home", Name: "Home", ExternalID: 1},
-		AwayTeam:  domain.Team{ID: "away", Name: "Away", ExternalID: 2},
-		StartTime: time.Date(2024, 1, 1, 15, 30, 0, 0, time.UTC).Format(time.RFC3339),
-		Status:    domain.StatusScheduled,
-		Score:     domain.Score{Home: 0, Away: 0},
-		Meta:      domain.GameMeta{Season: "2023-2024", UpstreamGameID: 123},
-	}
-	ms.SetGames([]domain.Game{game})
+	rr := testutil.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games/id-1", nil)
 
-	h := NewHandler(svc, nil, nil, nil)
-
-	req := httptest.NewRequest("GET", "/games/id-1", nil)
-	rr := httptest.NewRecorder()
-
-	h.GameByID(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	testutil.AssertStatus(t, rr, http.StatusOK)
 
 	var resp domain.Game
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed decoding game response: %v", err)
-	}
+	testutil.DecodeJSON(t, rr, &resp)
 
 	if resp.ID != "id-1" {
 		t.Fatalf("expected game id id-1, got %s", resp.ID)
@@ -255,39 +250,79 @@ func TestGameByID(t *testing.T) {
 }
 
 func TestGameByIDInvalid(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
-	req := httptest.NewRequest("GET", "/games", nil)
-	rr := httptest.NewRecorder()
+	rr := testutil.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games", nil)
 
-	h.GameByID(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
+	testutil.AssertStatus(t, rr, http.StatusBadRequest)
 }
 
 func TestGameByIDNotFound(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
-	req := httptest.NewRequest("GET", "/games/unknown", nil)
-	rr := httptest.NewRecorder()
+	rr := testutil.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games/unknown", nil)
 
-	h.GameByID(rr, req)
+	testutil.AssertStatus(t, rr, http.StatusNotFound)
+}
 
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rr.Code)
+func TestGameByIDInvalidCharacters(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/games/bad%20id", nil)
+	rr := testutil.ServeRequest(http.HandlerFunc(h.GameByID), req)
+
+	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+}
+
+func TestGameByIDWithEncodedSlash(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/games/foo%2Fbar", nil)
+	rr := testutil.ServeRequest(http.HandlerFunc(h.GameByID), req)
+
+	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+}
+
+func TestGameByIDUnescapeError(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
+
+	req := &http.Request{
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Path:    "/games/%zz",
+			RawPath: "/games/%zz",
+		},
+		Header: make(http.Header),
+	}
+	rr := testutil.ServeRequest(http.HandlerFunc(h.GameByID), req)
+
+	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+}
+
+func TestGameByIDRejectsGamesKeyword(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
+	rr := testutil.Serve(h, http.MethodGet, "/games/games", nil)
+	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+}
+
+func TestGamesTodayExplicitDateFallsBackToSnapshotWhenEmptyCache(t *testing.T) {
+	snaps := &stubSnapshots{
+		resp: testutil.SampleTodayResponse("2024-03-01", "snap-id"),
+	}
+	h := NewHandler(testutil.NewServiceWithGames(nil), snaps, nil, nil)
+
+	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-03-01", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+
+	var resp domain.TodayResponse
+	testutil.DecodeJSON(t, rr, &resp)
+	if resp.Date != "2024-03-01" || len(resp.Games) != 1 || resp.Games[0].ID != "snap-id" {
+		t.Fatalf("expected snapshot response, got %+v", resp)
 	}
 }
 
 func TestMethodNotAllowedHandlers(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
 	tests := []struct {
 		name string
@@ -302,20 +337,14 @@ func TestMethodNotAllowedHandlers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, tt.path, nil)
-			rr := httptest.NewRecorder()
-			tt.fn(rr, req)
-			if rr.Code != http.StatusMethodNotAllowed {
-				t.Fatalf("expected 405, got %d", rr.Code)
-			}
+			rr := testutil.Serve(http.HandlerFunc(tt.fn), http.MethodPost, tt.path, nil)
+			testutil.AssertStatus(t, rr, http.StatusMethodNotAllowed)
 		})
 	}
 }
 
 func TestRequestIDPropagatesThroughMiddleware(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/games/", h.GameByID)
@@ -323,18 +352,12 @@ func TestRequestIDPropagatesThroughMiddleware(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/games/missing", nil)
 	req.Header.Set("X-Request-ID", "abc123")
-	rr := httptest.NewRecorder()
+	rr := testutil.ServeRequest(wrapped, req)
 
-	wrapped.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rr.Code)
-	}
+	testutil.AssertStatus(t, rr, http.StatusNotFound)
 
 	var resp map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	testutil.DecodeJSON(t, rr, &resp)
 	if resp["requestId"] != "abc123" {
 		t.Fatalf("expected requestId propagated, got %s", resp["requestId"])
 	}
@@ -344,60 +367,53 @@ func TestRequestIDPropagatesThroughMiddleware(t *testing.T) {
 }
 
 func TestReady(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
-	req := httptest.NewRequest("GET", "/ready", nil)
-	rr := httptest.NewRecorder()
-
-	h.Ready(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	rr := testutil.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
 }
 
 func TestReadyWithStatus(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, func() poller.Status {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, func() poller.Status {
 		return poller.Status{
 			LastSuccess: time.Now(),
 		}
 	})
 
-	req := httptest.NewRequest("GET", "/ready", nil)
-	rr := httptest.NewRecorder()
+	rr := testutil.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
 
-	h.Ready(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	testutil.AssertStatus(t, rr, http.StatusOK)
 }
 
 func TestReadyNotReady(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, func() poller.Status {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, func() poller.Status {
 		return poller.Status{}
 	})
 
-	req := httptest.NewRequest("GET", "/ready", nil)
-	rr := httptest.NewRecorder()
+	rr := testutil.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
 
-	h.Ready(rr, req)
+	testutil.AssertStatus(t, rr, http.StatusServiceUnavailable)
+}
 
-	if rr.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503, got %d", rr.Code)
+func TestReadyNotReadyUsesLastError(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, func() poller.Status {
+		return poller.Status{
+			LastError: "upstream down",
+		}
+	})
+
+	rr := testutil.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
+
+	testutil.AssertStatus(t, rr, http.StatusServiceUnavailable)
+	var resp map[string]string
+	testutil.DecodeJSON(t, rr, &resp)
+	if resp["error"] != "upstream down" {
+		t.Fatalf("expected last error propagated, got %s", resp["error"])
 	}
 }
 
 func TestGamesTodayHonorsTimezone(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
 
 	loc, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -407,19 +423,11 @@ func TestGamesTodayHonorsTimezone(t *testing.T) {
 		return time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC).In(loc)
 	}
 
-	req := httptest.NewRequest("GET", "/games/today?tz=America/New_York", nil)
-	rr := httptest.NewRecorder()
-
-	h.GamesToday(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
+	rr := testutil.Serve(h, http.MethodGet, "/games/today?tz=America/New_York", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
 
 	var resp domain.TodayResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed decoding games response: %v", err)
-	}
+	testutil.DecodeJSON(t, rr, &resp)
 
 	if resp.Date != "2024-01-01" {
 		t.Fatalf("expected date 2024-01-01 for America/New_York, got %s", resp.Date)
@@ -427,36 +435,233 @@ func TestGamesTodayHonorsTimezone(t *testing.T) {
 }
 
 func TestGamesTodayLogsCacheHitsWhenNoDateParam(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-	h := NewHandler(svc, nil, nil, nil)
+	logger, buf := testutil.NewBufferLogger()
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, logger, nil)
 
-	req := httptest.NewRequest("GET", "/games", nil)
-	rr := httptest.NewRecorder()
+	rr := testutil.Serve(h, http.MethodGet, "/games", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+	if buf.Len() == 0 {
+		t.Fatalf("expected cache log entry")
+	}
+}
 
-	h.GamesToday(rr, req)
+func TestGamesTodayLogsCacheWhenSnapshotMissing(t *testing.T) {
+	logger, buf := testutil.NewBufferLogger()
+	h := NewHandler(testutil.NewServiceWithGames(nil), &stubSnapshots{err: errors.New("no snapshot")}, logger, nil)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
+	rr := testutil.Serve(h, http.MethodGet, "/games/today", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+
+	var resp domain.TodayResponse
+	testutil.DecodeJSON(t, rr, &resp)
+	if resp.Date == "" {
+		t.Fatalf("expected a computed date")
+	}
+	if buf.Len() == 0 {
+		t.Fatalf("expected cache log entry even when snapshot missing")
+	}
+}
+
+func TestServeHTTPNotFound(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
+	rr := testutil.Serve(h, http.MethodGet, "/unknown", nil)
+	testutil.AssertStatus(t, rr, http.StatusNotFound)
+}
+
+// Routing via ServeHTTP (switch on path)
+func TestServeHTTPRoutes(t *testing.T) {
+	game := testutil.SampleGame("id-1")
+	game.StartTime = time.Now().Format(time.RFC3339)
+	svc := testutil.NewServiceWithGames([]domain.Game{game})
+	h := NewHandler(svc, &stubSnapshots{resp: domain.TodayResponse{Date: "2024-01-01"}}, nil, func() poller.Status { return poller.Status{LastSuccess: time.Now()} })
+
+	tests := []struct {
+		path   string
+		status int
+	}{
+		{"/health", http.StatusOK},
+		{"/ready", http.StatusOK},
+		{"/games/today", http.StatusOK},
+		{"/games/id-1", http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		rr := testutil.Serve(h, http.MethodGet, tt.path, nil)
+		testutil.AssertStatus(t, rr, tt.status)
+	}
+}
+
+func TestServeHTTPRoutingAndMethods(t *testing.T) {
+	h := NewHandler(testutil.NewServiceWithGames(nil), nil, nil, nil)
+	tests := []struct {
+		method string
+		path   string
+		status int
+	}{
+		{http.MethodPost, "/health", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/ready", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/games/today", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/games/id", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/does-not-exist", http.StatusNotFound},
+		{http.MethodGet, "/games/", http.StatusBadRequest},
+		{http.MethodPost, "/unknown", http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(tt.method, tt.path, nil)
+		h.ServeHTTP(rr, req)
+		if rr.Code != tt.status {
+			t.Fatalf("path %s method %s: expected %d, got %d", tt.path, tt.method, tt.status, rr.Code)
+		}
 	}
 }
 
 func TestGamesTodayUpstreamErrorsReturnBadGateway(t *testing.T) {
-	ms := store.NewMemoryStore()
-	svc := games.NewService(ms)
-
 	snaps := &stubSnapshots{
 		err: errors.New("boom"),
 	}
 
+	h := NewHandler(testutil.NewServiceWithGames(nil), snaps, nil, nil)
+
+	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-02-01", nil)
+	testutil.AssertStatus(t, rr, http.StatusBadGateway)
+}
+
+func TestGamesTodayFallsBackToSnapshotWhenCacheEmpty(t *testing.T) {
+	ms := store.NewMemoryStore()
+	svc := games.NewService(ms)
+	snaps := &stubSnapshots{
+		resp: domain.TodayResponse{
+			Date:  "2024-02-01",
+			Games: []domain.Game{{ID: "snapshot-game"}},
+		},
+	}
+
 	h := NewHandler(svc, snaps, nil, nil)
+	h.now = func() time.Time { return time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC) }
 
-	req := httptest.NewRequest("GET", "/games?date=2024-02-01", nil)
+	rr := testutil.Serve(h, http.MethodGet, "/games/today", nil)
+	testutil.AssertStatus(t, rr, http.StatusOK)
+	var resp domain.TodayResponse
+	testutil.DecodeJSON(t, rr, &resp)
+	if resp.Date != "2024-02-01" || len(resp.Games) != 1 || resp.Games[0].ID != "snapshot-game" {
+		t.Fatalf("unexpected snapshot response %+v", resp)
+	}
+}
+
+func TestWriteJSONErrorPath(t *testing.T) {
 	rr := httptest.NewRecorder()
+	// channels cannot be JSON encoded; triggers the error branch.
+	writeJSON(rr, http.StatusOK, make(chan int), nil)
+	// Status is still written even on encode error.
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 despite encode error, got %d", rr.Code)
+	}
+}
 
-	h.GamesToday(rr, req)
+// Helper coverage
+func TestWriteJSONErrorLogs(t *testing.T) {
+	logger, buf := testutil.NewBufferLogger()
+	rr := httptest.NewRecorder()
+	writeJSON(rr, http.StatusOK, make(chan int), logger)
+	if buf.Len() == 0 {
+		t.Fatalf("expected logger to record encode error")
+	}
+}
 
-	if rr.Code != http.StatusBadGateway {
-		t.Fatalf("expected 502, got %d", rr.Code)
+func TestWriteErrorIncludesHeaderRequestID(t *testing.T) {
+	logger, _ := testutil.NewBufferLogger()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/games/today", nil)
+	req.Header.Set("X-Request-ID", "from-header")
+
+	writeError(rr, req, http.StatusBadRequest, "boom", logger)
+
+	var resp map[string]string
+	testutil.DecodeJSON(t, rr, &resp)
+	if resp["requestId"] != "from-header" {
+		t.Fatalf("expected requestId from header, got %s", resp["requestId"])
+	}
+	if resp["error"] != "boom" {
+		t.Fatalf("expected error message propagated")
+	}
+}
+
+func TestRequestIDNilRequest(t *testing.T) {
+	if got := requestID(nil); got != "" {
+		t.Fatalf("expected empty request id for nil request, got %s", got)
+	}
+}
+
+func TestLoggerFromContextPrefersAttachedLogger(t *testing.T) {
+	fallback, _ := testutil.NewBufferLogger()
+	ctxLogger, _ := testutil.NewBufferLogger()
+	ctx := logging.WithLogger(context.Background(), ctxLogger)
+	req := httptest.NewRequest(http.MethodGet, "/games/today", nil).WithContext(ctx)
+
+	got := loggerFromContext(req, fallback)
+	if got != ctxLogger {
+		t.Fatalf("expected logger from context to be returned")
+	}
+}
+
+func TestLoggerFromContextNilRequestReturnsFallback(t *testing.T) {
+	fallback, _ := testutil.NewBufferLogger()
+	if got := loggerFromContext(nil, fallback); got != fallback {
+		t.Fatalf("expected fallback logger when request is nil")
+	}
+}
+
+// Benchmarks
+func BenchmarkGamesToday(b *testing.B) {
+	ms := store.NewMemoryStore()
+	now := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	ms.SetGames([]domain.Game{
+		{
+			ID:        "game-1",
+			Provider:  "test",
+			HomeTeam:  domain.Team{ID: "home", Name: "Home", ExternalID: 1},
+			AwayTeam:  domain.Team{ID: "away", Name: "Away", ExternalID: 2},
+			StartTime: now.Format(time.RFC3339),
+			Status:    domain.StatusScheduled,
+			Score:     domain.Score{Home: 0, Away: 0},
+			Meta:      domain.GameMeta{Season: "2023-2024", UpstreamGameID: 123},
+		},
+	})
+	svc := games.NewService(ms)
+	h := NewHandler(svc, snapshots.NewFSStore(b.TempDir()), nil, nil)
+	h.now = func() time.Time { return now }
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/games/today", nil)
+		h.GamesToday(rr, req)
+	}
+}
+
+func BenchmarkGameByID(b *testing.B) {
+	ms := store.NewMemoryStore()
+	now := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	ms.SetGames([]domain.Game{
+		{
+			ID:        "game-1",
+			Provider:  "test",
+			HomeTeam:  domain.Team{ID: "home", Name: "Home", ExternalID: 1},
+			AwayTeam:  domain.Team{ID: "away", Name: "Away", ExternalID: 2},
+			StartTime: now.Format(time.RFC3339),
+			Status:    domain.StatusScheduled,
+			Score:     domain.Score{Home: 0, Away: 0},
+			Meta:      domain.GameMeta{Season: "2023-2024", UpstreamGameID: 123},
+		},
+	})
+	svc := games.NewService(ms)
+	h := NewHandler(svc, nil, nil, nil)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/games/game-1", nil)
+		h.GameByID(rr, req)
 	}
 }

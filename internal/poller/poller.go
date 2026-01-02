@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"nba-data-service/internal/app/games"
+	"nba-data-service/internal/logging"
 	"nba-data-service/internal/metrics"
 	"nba-data-service/internal/providers"
 )
@@ -75,6 +76,7 @@ func (p *Poller) Start(ctx context.Context) {
 	p.ticker = time.NewTicker(p.interval)
 
 	go func() {
+		p.logInfo("poller started", slog.Int64(logging.FieldDurationMS, p.interval.Milliseconds()))
 		// Initial fetch to warm data on boot.
 		p.fetchOnce(ctx)
 
@@ -82,9 +84,11 @@ func (p *Poller) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				p.stopTicker()
+				p.logInfo("poller stopped")
 				return
 			case <-p.done:
 				p.stopTicker()
+				p.logInfo("poller stopped")
 				return
 			case <-p.ticker.C:
 				p.fetchOnce(ctx)
@@ -111,14 +115,17 @@ func (p *Poller) fetchOnce(ctx context.Context) {
 		p.metrics.RecordPollerCycle(time.Since(start), err)
 	}
 	if err != nil {
-		p.logError("poller fetch failed", err)
+		p.logError("poller fetch failed", err, slog.Int64(logging.FieldDurationMS, time.Since(start).Milliseconds()))
 		p.recordFailure(err, start)
 		return
 	}
 
 	p.service.ReplaceGames(games)
 	p.recordSuccess(start)
-	p.logInfo("poller refreshed games", "count", len(games))
+	p.logInfo("poller refreshed games",
+		logging.FieldCount, len(games),
+		logging.FieldDurationMS, time.Since(start).Milliseconds(),
+	)
 }
 
 func (p *Poller) stopTicker() {
@@ -133,9 +140,9 @@ func (p *Poller) logInfo(msg string, args ...any) {
 	}
 }
 
-func (p *Poller) logError(msg string, err error) {
+func (p *Poller) logError(msg string, err error, attrs ...any) {
 	if p.logger != nil {
-		p.logger.Error(msg, "error", err)
+		p.logger.Error(msg, append(attrs, "error", err)...)
 	}
 }
 
@@ -168,4 +175,9 @@ func (p *Poller) Status() Status {
 	p.statusMu.RLock()
 	defer p.statusMu.RUnlock()
 	return p.status
+}
+
+// Provider exposes the underlying provider (primarily for cleanup in callers).
+func (p *Poller) Provider() providers.GameProvider {
+	return p.provider
 }

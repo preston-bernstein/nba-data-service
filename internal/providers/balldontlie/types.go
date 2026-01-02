@@ -11,6 +11,9 @@ type gameResponse struct {
 	ID               int          `json:"id"`
 	Date             string       `json:"date"`
 	Status           string       `json:"status"`
+	Time             string       `json:"time"`
+	Period           int          `json:"period"`
+	Postseason       bool         `json:"postseason"`
 	HomeTeam         teamResponse `json:"home_team"`
 	VisitorTeam      teamResponse `json:"visitor_team"`
 	HomeTeamScore    int          `json:"home_team_score"`
@@ -19,8 +22,13 @@ type gameResponse struct {
 }
 
 type teamResponse struct {
-	ID       int    `json:"id"`
-	FullName string `json:"full_name"`
+	ID           int    `json:"id"`
+	Abbreviation string `json:"abbreviation"`
+	City         string `json:"city"`
+	Conference   string `json:"conference"`
+	Division     string `json:"division"`
+	FullName     string `json:"full_name"`
+	Name         string `json:"name"`
 }
 
 type metaResponse struct {

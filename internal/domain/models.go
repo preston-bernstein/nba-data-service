@@ -19,15 +19,22 @@ type Score struct {
 
 // Team represents the normalized team shape.
 type Team struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	ExternalID int    `json:"externalId"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	ExternalID   int    `json:"externalId"`
+	Abbreviation string `json:"abbreviation,omitempty"`
+	City         string `json:"city,omitempty"`
+	Conference   string `json:"conference,omitempty"`
+	Division     string `json:"division,omitempty"`
 }
 
 // GameMeta stores provider metadata for a game.
 type GameMeta struct {
 	Season         string `json:"season"`
 	UpstreamGameID int    `json:"upstreamGameId"`
+	Period         int    `json:"period,omitempty"`
+	Postseason     bool   `json:"postseason,omitempty"`
+	Time           string `json:"time,omitempty"`
 }
 
 // Game is the canonical game shape exposed by the service.

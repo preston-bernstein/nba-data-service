@@ -51,8 +51,8 @@ func LoggingMiddleware(baseLogger *slog.Logger, recorder *metrics.Recorder, next
 		}
 
 		logger.Info("request complete",
-			slog.Int("status", ww.status),
-			slog.Int64("duration_ms", duration.Milliseconds()),
+			slog.Int(logging.FieldStatusCode, ww.status),
+			slog.Int64(logging.FieldDurationMS, duration.Milliseconds()),
 		)
 	})
 }

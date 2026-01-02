@@ -200,6 +200,14 @@ components:
           type: string
         externalId:
           type: integer
+        abbreviation:
+          type: string
+        city:
+          type: string
+        conference:
+          type: string
+        division:
+          type: string
       required: [id, name, externalId]
     Score:
       type: object
@@ -216,6 +224,12 @@ components:
           type: string
         upstreamGameId:
           type: integer
+        period:
+          type: integer
+        postseason:
+          type: boolean
+        time:
+          type: string
       required: [season, upstreamGameId]
     ErrorResponse:
       type: object

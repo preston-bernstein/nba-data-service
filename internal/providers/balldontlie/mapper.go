@@ -22,15 +22,22 @@ func mapGame(g gameResponse) domain.Game {
 		Meta: domain.GameMeta{
 			Season:         formatSeason(g.Season),
 			UpstreamGameID: g.ID,
+			Period:         g.Period,
+			Postseason:     g.Postseason,
+			Time:           strings.TrimSpace(g.Time),
 		},
 	}
 }
 
 func mapTeam(t teamResponse) domain.Team {
 	return domain.Team{
-		ID:         fmt.Sprintf("team-%d", t.ID),
-		Name:       t.FullName,
-		ExternalID: t.ID,
+		ID:           fmt.Sprintf("team-%d", t.ID),
+		Name:         t.FullName,
+		ExternalID:   t.ID,
+		Abbreviation: t.Abbreviation,
+		City:         t.City,
+		Conference:   t.Conference,
+		Division:     t.Division,
 	}
 }
 

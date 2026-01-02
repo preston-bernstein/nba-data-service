@@ -19,6 +19,7 @@ import (
 var (
 	promReaderFactory = prometheusComponents
 	otlpReaderFactory = buildOTLPReader
+	instrumentFactory = newOtelInstruments
 )
 
 // TelemetryConfig controls how metrics are exported.
@@ -67,7 +68,7 @@ func Setup(ctx context.Context, cfg TelemetryConfig) (*Recorder, http.Handler, f
 
 	provider := sdkmetric.NewMeterProvider(opts...)
 
-	otelInst, err := newOtelInstruments(provider)
+	otelInst, err := instrumentFactory(provider)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -116,7 +117,7 @@ func prometheusComponents() (sdkmetric.Reader, http.Handler, error) {
 	return promExp, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), nil
 }
 
-func newOtelInstruments(provider *sdkmetric.MeterProvider) (*otelInstruments, error) {
+func newOtelInstruments(provider metric.MeterProvider) (*otelInstruments, error) {
 	meter := provider.Meter("nba-data-service")
 	ctx := context.Background()
 
@@ -183,23 +184,23 @@ func (o *otelInstruments) recordHTTPRequest(method, path string, status int, dur
 		return
 	}
 	attrs := []attribute.KeyValue{
-		attribute.String("method", method),
-		attribute.String("path", path),
-		attribute.Int("status", status),
+		attribute.String(AttrMethod, method),
+		attribute.String(AttrPath, path),
+		attribute.Int(AttrStatus, status),
 	}
-	o.requests.Add(o.ctx, 1, metric.WithAttributes(attrs...))
-	o.requestLatencyMs.Record(o.ctx, float64(duration.Milliseconds()), metric.WithAttributes(attrs...))
+	o.recordCounter(o.requests, 1, attrs...)
+	o.recordHistogram(o.requestLatencyMs, float64(duration.Milliseconds()), attrs...)
 }
 
 func (o *otelInstruments) recordProviderAttempt(provider string, duration time.Duration, err error) {
 	if o == nil {
 		return
 	}
-	attrs := []attribute.KeyValue{attribute.String("provider", provider)}
-	o.providerAttempts.Add(o.ctx, 1, metric.WithAttributes(attrs...))
-	o.providerLatencyMs.Record(o.ctx, float64(duration.Milliseconds()), metric.WithAttributes(attrs...))
+	attrs := []attribute.KeyValue{attribute.String(AttrProvider, provider)}
+	o.recordCounter(o.providerAttempts, 1, attrs...)
+	o.recordHistogram(o.providerLatencyMs, float64(duration.Milliseconds()), attrs...)
 	if err != nil {
-		o.providerErrors.Add(o.ctx, 1, metric.WithAttributes(attrs...))
+		o.recordCounter(o.providerErrors, 1, attrs...)
 	}
 }
 
@@ -207,10 +208,10 @@ func (o *otelInstruments) recordRateLimit(provider string, retryAfter time.Durat
 	if o == nil {
 		return
 	}
-	attrs := []attribute.KeyValue{attribute.String("provider", provider)}
-	o.rateLimitHits.Add(o.ctx, 1, metric.WithAttributes(attrs...))
+	attrs := []attribute.KeyValue{attribute.String(AttrProvider, provider)}
+	o.recordCounter(o.rateLimitHits, 1, attrs...)
 	if retryAfter > 0 {
-		o.retryAfterMs.Record(o.ctx, float64(retryAfter.Milliseconds()), metric.WithAttributes(attrs...))
+		o.recordHistogram(o.retryAfterMs, float64(retryAfter.Milliseconds()), attrs...)
 	}
 }
 
@@ -218,9 +219,23 @@ func (o *otelInstruments) recordPoller(duration time.Duration, err error) {
 	if o == nil {
 		return
 	}
-	o.pollerCycles.Add(o.ctx, 1)
-	o.pollerLatencyMs.Record(o.ctx, float64(duration.Milliseconds()))
+	o.recordCounter(o.pollerCycles, 1)
+	o.recordHistogram(o.pollerLatencyMs, float64(duration.Milliseconds()))
 	if err != nil {
-		o.pollerErrors.Add(o.ctx, 1)
+		o.recordCounter(o.pollerErrors, 1)
 	}
+}
+
+func (o *otelInstruments) recordCounter(counter metric.Int64Counter, value int64, attrs ...attribute.KeyValue) {
+	if o == nil {
+		return
+	}
+	counter.Add(o.ctx, value, metric.WithAttributes(attrs...))
+}
+
+func (o *otelInstruments) recordHistogram(hist metric.Float64Histogram, value float64, attrs ...attribute.KeyValue) {
+	if o == nil {
+		return
+	}
+	hist.Record(o.ctx, value, metric.WithAttributes(attrs...))
 }
