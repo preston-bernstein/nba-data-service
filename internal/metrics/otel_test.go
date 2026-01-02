@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
@@ -122,6 +124,8 @@ func TestSetupDefaultsServiceNameWhenEmpty(t *testing.T) {
 	if rec == nil || handler == nil || shutdown == nil {
 		t.Fatalf("expected recorder, handler, shutdown")
 	}
+	rec.RecordRateLimit("balldontlie", 0)
+	rec.RecordProviderAttempt("balldontlie", time.Millisecond, errors.New("fail"))
 }
 
 func TestPrometheusComponentsReturnsReaderAndHandler(t *testing.T) {
@@ -149,7 +153,8 @@ func TestOtelInstrumentsRecordingDoesNotPanic(t *testing.T) {
 	nilInst.recordRateLimit("p", time.Second)
 	nilInst.recordPoller(time.Millisecond, errors.New("err"))
 
-	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewManualReader()))
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	inst, err := newOtelInstruments(provider)
 	if err != nil {
 		t.Fatalf("expected instruments, got %v", err)
@@ -200,6 +205,33 @@ func TestNewOtelInstrumentsRegistersAllMetrics(t *testing.T) {
 	}
 }
 
+func TestNewOtelInstrumentsHandlesCreationErrors(t *testing.T) {
+	// Meter provider that fails instrument creation via injected factory.
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewManualReader()))
+	origFactory := instrumentFactory
+	defer func() { instrumentFactory = origFactory }()
+	instrumentFactory = func(metric.MeterProvider) (*otelInstruments, error) {
+		return nil, errors.New("boom")
+	}
+	if _, err := instrumentFactory(provider); err == nil {
+		t.Fatalf("expected error from injected failure")
+	}
+}
+
+func TestPrometheusComponentsErrorPath(t *testing.T) {
+	origFactory := promReaderFactory
+	defer func() { promReaderFactory = origFactory }()
+
+	// Force promexporter.New to fail by swapping the factory.
+	promReaderFactory = func() (sdkmetric.Reader, http.Handler, error) {
+		return nil, nil, errors.New("prom fail")
+	}
+
+	if _, _, _, err := Setup(context.Background(), TelemetryConfig{Enabled: true}); err == nil {
+		t.Fatalf("expected setup to fail when prom factory fails")
+	}
+}
+
 func TestSetupReturnsErrorWhenFactoriesFail(t *testing.T) {
 	origProm := promReaderFactory
 	origOTLP := otlpReaderFactory
@@ -223,5 +255,82 @@ func TestSetupReturnsErrorWhenFactoriesFail(t *testing.T) {
 
 	if _, _, _, err := Setup(context.Background(), TelemetryConfig{Enabled: true, OtlpEndpoint: "collector"}); err == nil {
 		t.Fatalf("expected error when otlp factory fails")
+	}
+}
+
+type scriptedMeter struct {
+	metric.Meter
+	failCounter   string
+	failHistogram string
+}
+
+func (m scriptedMeter) Int64Counter(name string, opts ...metric.Int64CounterOption) (metric.Int64Counter, error) {
+	if name == m.failCounter {
+		return nil, errors.New("counter fail")
+	}
+	return m.Meter.Int64Counter(name, opts...)
+}
+
+func (m scriptedMeter) Float64Histogram(name string, opts ...metric.Float64HistogramOption) (metric.Float64Histogram, error) {
+	if name == m.failHistogram {
+		return nil, errors.New("histogram fail")
+	}
+	return m.Meter.Float64Histogram(name, opts...)
+}
+
+func (scriptedMeter) meter() {}
+
+type scriptedProvider struct {
+	metric.MeterProvider
+	m metric.Meter
+}
+
+func (p scriptedProvider) Meter(_ string, _ ...metric.MeterOption) metric.Meter {
+	return p.m
+}
+
+func TestNewOtelInstrumentsErrorBranches(t *testing.T) {
+	base := noop.NewMeterProvider().Meter("base")
+	cases := []struct {
+		name string
+		hist bool
+	}{
+		{"http_requests_total", false},
+		{"http_request_duration_ms", true},
+		{"provider_attempts_total", false},
+		{"provider_errors_total", false},
+		{"provider_duration_ms", true},
+		{"provider_rate_limit_hits_total", false},
+		{"provider_retry_after_ms", true},
+		{"poller_cycles_total", false},
+		{"poller_errors_total", false},
+		{"poller_cycle_duration_ms", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			baseProvider := noop.NewMeterProvider()
+			m := scriptedMeter{Meter: base, failCounter: tc.name}
+			if tc.hist {
+				m.failCounter = ""
+				m.failHistogram = tc.name
+			}
+			provider := scriptedProvider{MeterProvider: baseProvider, m: m}
+			if _, err := newOtelInstruments(provider); err == nil {
+				t.Fatalf("expected error for instrument %s", tc.name)
+			}
+		})
+	}
+}
+
+func TestSetupFailsWhenInstrumentFactoryErrors(t *testing.T) {
+	orig := instrumentFactory
+	defer func() { instrumentFactory = orig }()
+
+	instrumentFactory = func(metric.MeterProvider) (*otelInstruments, error) {
+		return nil, errors.New("instrument fail")
+	}
+
+	if _, _, _, err := Setup(context.Background(), TelemetryConfig{Enabled: true}); err == nil {
+		t.Fatalf("expected setup to fail when instrument factory errors")
 	}
 }

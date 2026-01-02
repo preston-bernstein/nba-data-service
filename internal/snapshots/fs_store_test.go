@@ -88,3 +88,18 @@ func TestFSStoreSetsDateWhenMissing(t *testing.T) {
 		t.Fatalf("expected date to be set from filename, got %s", loaded.Date)
 	}
 }
+
+func TestFSStoreDecodeError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "games"), 0o755); err != nil {
+		t.Fatalf("failed to create games dir: %v", err)
+	}
+	path := filepath.Join(dir, "games", "2024-03-02.json")
+	if err := os.WriteFile(path, []byte("{bad json"), 0o644); err != nil {
+		t.Fatalf("failed to write snapshot: %v", err)
+	}
+	store := NewFSStore(dir)
+	if _, err := store.LoadGames("2024-03-02"); err == nil {
+		t.Fatalf("expected decode error")
+	}
+}

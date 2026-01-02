@@ -11,8 +11,11 @@ func TestMapGameTransformsFields(t *testing.T) {
 		ID:               42,
 		Date:             "2024-01-02T20:00:00Z",
 		Status:           "In Progress",
-		HomeTeam:         teamResponse{ID: 10, FullName: "Home Squad"},
-		VisitorTeam:      teamResponse{ID: 20, FullName: "Away Squad"},
+		Time:             "Q3 05:00",
+		Period:           3,
+		Postseason:       true,
+		HomeTeam:         teamResponse{ID: 10, FullName: "Home Squad", Abbreviation: "HMS", City: "Home", Conference: "East", Division: "Atlantic"},
+		VisitorTeam:      teamResponse{ID: 20, FullName: "Away Squad", Abbreviation: "AWS", City: "Away", Conference: "West", Division: "Pacific"},
 		HomeTeamScore:    55,
 		VisitorTeamScore: 50,
 		Season:           2024,
@@ -32,8 +35,14 @@ func TestMapGameTransformsFields(t *testing.T) {
 	if game.Meta.UpstreamGameID != 42 || game.Meta.Season != "2024" {
 		t.Fatalf("unexpected meta %+v", game.Meta)
 	}
+	if game.Meta.Period != 3 || !game.Meta.Postseason || game.Meta.Time != "Q3 05:00" {
+		t.Fatalf("unexpected meta extras %+v", game.Meta)
+	}
 	if game.HomeTeam.ID != "team-10" || game.AwayTeam.ID != "team-20" {
 		t.Fatalf("unexpected team ids home=%s away=%s", game.HomeTeam.ID, game.AwayTeam.ID)
+	}
+	if game.HomeTeam.Abbreviation != "HMS" || game.HomeTeam.City != "Home" || game.HomeTeam.Conference != "East" || game.HomeTeam.Division != "Atlantic" {
+		t.Fatalf("unexpected home team extras %+v", game.HomeTeam)
 	}
 }
 

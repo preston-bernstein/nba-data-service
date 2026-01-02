@@ -28,6 +28,18 @@ func NewWriter(basePath string, retentionDays int) *Writer {
 	}
 }
 
+func (w *Writer) snapshotPath(date string) string {
+	return filepath.Join(w.basePath, "games", fmt.Sprintf("%s.json", date))
+}
+
+// BasePath exposes the writer root path (primarily for testing).
+func (w *Writer) BasePath() string {
+	if w == nil {
+		return ""
+	}
+	return w.basePath
+}
+
 // WriteGamesSnapshot writes the games snapshot for the given date (YYYY-MM-DD) and prunes old snapshots.
 func (w *Writer) WriteGamesSnapshot(date string, snapshot domain.TodayResponse) error {
 	if w == nil {
@@ -39,13 +51,12 @@ func (w *Writer) WriteGamesSnapshot(date string, snapshot domain.TodayResponse) 
 	if snapshot.Date == "" {
 		snapshot.Date = date
 	}
-	gamesDir := filepath.Join(w.basePath, "games")
-	if err := os.MkdirAll(gamesDir, 0o755); err != nil {
+	target := w.snapshotPath(date)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
 
 	// Write snapshot atomically.
-	target := filepath.Join(gamesDir, fmt.Sprintf("%s.json", date))
 	tmp := target + ".tmp"
 	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
@@ -115,8 +126,9 @@ func (w *Writer) listGameDates() ([]string, error) {
 }
 
 func (w *Writer) pruneOldSnapshots(dates []string) ([]string, error) {
-	// Keep only dates within retentionDays from now.
-	cutoff := time.Now().AddDate(0, 0, -w.retentionDays)
+	// Keep only dates within retentionDays from now (date-level, not time-of-day).
+	now := time.Now().UTC()
+	cutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -w.retentionDays)
 	var keep []string
 	for _, d := range dates {
 		parsed, err := time.Parse("2006-01-02", d)
@@ -126,7 +138,7 @@ func (w *Writer) pruneOldSnapshots(dates []string) ([]string, error) {
 			continue
 		}
 		if parsed.Before(cutoff) {
-			path := filepath.Join(w.basePath, "games", fmt.Sprintf("%s.json", d))
+			path := w.snapshotPath(d)
 			_ = os.Remove(path)
 			continue
 		}

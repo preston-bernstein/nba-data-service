@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	"nba-data-service/internal/domain"
@@ -127,6 +126,7 @@ func (s *Syncer) buildDates(now time.Time) []string {
 }
 
 func (s *Syncer) fetchAndWrite(ctx context.Context, date string) {
+	start := time.Now()
 	games, err := s.provider.FetchGames(ctx, date, "")
 	if err != nil {
 		s.logWarn("snapshot sync fetch failed", "date", date, "err", err)
@@ -144,7 +144,11 @@ func (s *Syncer) fetchAndWrite(ctx context.Context, date string) {
 		s.logWarn("snapshot sync write failed", "date", date, "err", err)
 		return
 	}
-	s.logInfo("snapshot written", "date", date, "count", len(games))
+	s.logInfo("snapshot written",
+		"date", date,
+		"count", len(games),
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
 }
 
 func (s *Syncer) sleep(ctx context.Context, d time.Duration) {
@@ -172,7 +176,7 @@ func (s *Syncer) hasSnapshot(date string) bool {
 	if s == nil || s.writer == nil || s.writer.basePath == "" || date == "" {
 		return false
 	}
-	path := filepath.Join(s.writer.basePath, "games", date+".json")
+	path := s.writer.snapshotPath(date)
 	_, err := os.Stat(path)
 	return err == nil
 }

@@ -2,12 +2,12 @@ package http
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/http/handlers"
 	"nba-data-service/internal/store"
+	"nba-data-service/internal/testutil"
 )
 
 func TestRouterRoutesKnownPaths(t *testing.T) {
@@ -25,12 +25,8 @@ func TestRouterRoutesKnownPaths(t *testing.T) {
 	}
 
 	for path, expected := range cases {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		rr := httptest.NewRecorder()
-		router.ServeHTTP(rr, req)
-		if rr.Code != expected {
-			t.Fatalf("route %s expected status %d, got %d", path, expected, rr.Code)
-		}
+		rr := testutil.Serve(router, http.MethodGet, path, nil)
+		testutil.AssertStatus(t, rr, expected)
 	}
 }
 
@@ -41,11 +37,6 @@ func TestRouterUnknownRouteReturns404(t *testing.T) {
 
 	router := NewRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/does-not-exist", nil)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for unknown route, got %d", rr.Code)
-	}
+	rr := testutil.Serve(router, http.MethodGet, "/does-not-exist", nil)
+	testutil.AssertStatus(t, rr, http.StatusNotFound)
 }

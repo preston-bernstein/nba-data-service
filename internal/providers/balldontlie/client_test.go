@@ -30,8 +30,11 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 					"id": 10,
 					"date": "2024-01-02T15:00:00Z",
 					"status": "Final",
-					"home_team": { "id": 1, "full_name": "Home Team" },
-					"visitor_team": { "id": 2, "full_name": "Away Team" },
+					"time": "Final",
+					"period": 4,
+					"postseason": false,
+					"home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" },
+					"visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" },
 					"home_team_score": 110,
 					"visitor_team_score": 102,
 					"season": 2023
@@ -45,8 +48,11 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 						"id": 10,
 						"date": "2024-01-02T15:00:00Z",
 						"status": "Final",
-						"home_team": { "id": 1, "full_name": "Home Team" },
-						"visitor_team": { "id": 2, "full_name": "Away Team" },
+						"time": "Final",
+						"period": 4,
+						"postseason": false,
+						"home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" },
+						"visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" },
 						"home_team_score": 110,
 						"visitor_team_score": 102,
 						"season": 2023
@@ -63,8 +69,11 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 						"id": 11,
 						"date": "2024-01-03T15:00:00Z",
 						"status": "Final",
-						"home_team": { "id": 3, "full_name": "Another Team" },
-						"visitor_team": { "id": 4, "full_name": "Away Team 2" },
+						"time": "Final",
+						"period": 4,
+						"postseason": false,
+						"home_team": { "id": 3, "full_name": "Another Team", "abbreviation": "ANT", "city": "Another City", "conference": "East", "division": "Central", "name": "Another" },
+						"visitor_team": { "id": 4, "full_name": "Away Team 2", "abbreviation": "AW2", "city": "Away City 2", "conference": "West", "division": "Northwest", "name": "Away2" },
 						"home_team_score": 120,
 						"visitor_team_score": 115,
 						"season": 2023
@@ -131,6 +140,15 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 	}
 	if game.Meta.UpstreamGameID != 10 || game.Meta.Season != "2023" {
 		t.Fatalf("unexpected meta %+v", game.Meta)
+	}
+	if game.Meta.Period != 4 || game.Meta.Postseason {
+		t.Fatalf("unexpected meta extras %+v", game.Meta)
+	}
+	if game.Meta.Time != "Final" {
+		t.Fatalf("unexpected meta time %s", game.Meta.Time)
+	}
+	if game.HomeTeam.Abbreviation != "HTM" || game.HomeTeam.City != "Home City" || game.HomeTeam.Conference != "East" || game.HomeTeam.Division != "Atlantic" {
+		t.Fatalf("unexpected home team extras %+v", game.HomeTeam)
 	}
 }
 

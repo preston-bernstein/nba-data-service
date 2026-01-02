@@ -2,11 +2,8 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
-	"time"
 
 	"nba-data-service/internal/app/games"
 	"nba-data-service/internal/config"
@@ -17,9 +14,10 @@ import (
 	"nba-data-service/internal/metrics"
 	"nba-data-service/internal/poller"
 	"nba-data-service/internal/providers"
-	"nba-data-service/internal/snapshots"
 	"nba-data-service/internal/store"
 )
+
+var metricsSetup = metrics.Setup
 
 type Server struct {
 	cfg           config.Config
@@ -34,9 +32,8 @@ type Server struct {
 
 // New constructs a server with default provider and poller wiring.
 func New(cfg config.Config, logger *slog.Logger) *Server {
-	provider := selectProvider(cfg, logger)
-	// Apply a shared rate limiter to respect upstream quotas (default 1/min if poller interval < limiter interval).
-	provider = providers.NewRateLimitedProvider(provider, time.Minute, logger)
+	factory := newProviderFactory(logger, nil)
+	provider := factory.build(cfg)
 	return newServerWithProvider(cfg, logger, provider)
 }
 
@@ -45,39 +42,13 @@ func newServerWithProvider(cfg config.Config, logger *slog.Logger, provider prov
 }
 
 func newServerWithMetrics(cfg config.Config, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder) *Server {
-	var metricsShutdown func(context.Context) error
-	var metricsSrv httpServer
-	providerName := normalizeProviderName(cfg.Provider, provider)
+	recorder, metricsSrv, metricsShutdown := buildMetrics(cfg, logger, recorder)
 
-	if recorder == nil {
-		recCfg := metrics.TelemetryConfig{
-			Enabled:      cfg.Metrics.Enabled,
-			Port:         cfg.Metrics.Port,
-			ServiceName:  cfg.Metrics.ServiceName,
-			OtlpEndpoint: cfg.Metrics.OtlpEndpoint,
-			OtlpInsecure: cfg.Metrics.OtlpInsecure,
-		}
-		rec, handler, shutdown, err := metrics.Setup(context.Background(), recCfg)
-		if err != nil {
-			if logger != nil {
-				logger.Warn("metrics setup failed, continuing without telemetry", "err", err)
-			}
-			recorder = metrics.NewRecorder()
-		} else {
-			recorder = rec
-			metricsShutdown = shutdown
-			if handler != nil && recCfg.Enabled {
-				metricsSrv = netHTTPServer{
-					srv: &http.Server{
-						Addr:    ":" + recCfg.Port,
-						Handler: handler,
-					},
-				}
-			}
-		}
+	if provider == nil {
+		provider = newProviderFactory(logger, recorder).build(cfg)
+	} else {
+		provider = providers.NewRetryingProvider(provider, logger, recorder, normalizeProviderName(cfg.Provider, provider), 0, 0)
 	}
-
-	provider = providers.NewRetryingProvider(provider, logger, recorder, providerName, 0, 0)
 	domainService := buildDomainService()
 	plr := poller.New(provider, domainService, logger, recorder, cfg.PollInterval)
 	httpSrv := buildHTTPServer(cfg, domainService, logger, provider, recorder, plr)
@@ -116,19 +87,9 @@ func buildHTTPServer(cfg config.Config, svc *games.Service, logger *slog.Logger,
 		statusFn = plr.Status
 	}
 
-	snapPath := "data/snapshots"
-	snapStore := snapshots.NewFSStore(snapPath)
-	snapWriter := snapshots.NewWriter(snapPath, cfg.Snapshots.RetentionDays)
-	syncer := snapshots.NewSyncer(provider, snapWriter, snapshots.SyncConfig{
-		Enabled:      cfg.Snapshots.Enabled,
-		Days:         cfg.Snapshots.Days,
-		FutureDays:   cfg.Snapshots.FutureDays,
-		Interval:     cfg.Snapshots.Interval,
-		DailyHourUTC: cfg.Snapshots.DailyHourUTC,
-	}, logger)
-	go syncer.Run(context.Background())
-	handler := handlers.NewHandler(svc, snapStore, logger, statusFn)
-	admin := handlers.NewAdminHandler(svc, snapWriter, provider, cfg.Snapshots.AdminToken, logger)
+	snaps := buildSnapshots(cfg, provider, logger)
+	handler := handlers.NewHandler(svc, snaps.store, logger, statusFn)
+	admin := handlers.NewAdminHandler(svc, snaps.writer, provider, cfg.Snapshots.AdminToken, logger)
 	router := httpserver.NewRouter(handler)
 	// Optionally mount admin refresh endpoint if token is set.
 	if admin != nil && cfg.Snapshots.AdminToken != "" {
@@ -167,6 +128,9 @@ func (s *Server) Run(ctx context.Context, stop context.CancelFunc) {
 }
 
 func (s *Server) startServer(stop context.CancelFunc) {
+	if s.logger != nil {
+		s.logger.Info("http server starting", slog.String("addr", s.httpServer.Addr()))
+	}
 	launchServer("http", s.httpServer, s.logger, func(err error) {
 		if stop != nil {
 			stop()
@@ -177,6 +141,9 @@ func (s *Server) startServer(stop context.CancelFunc) {
 func (s *Server) startMetrics() {
 	if s.metricsServer == nil {
 		return
+	}
+	if s.logger != nil {
+		s.logger.Info("metrics server starting", slog.String("addr", s.metricsServer.Addr()))
 	}
 	launchServer("metrics", s.metricsServer, s.logger, nil)
 }
@@ -204,6 +171,60 @@ func (s *Server) gracefulShutdown() {
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil && s.logger != nil {
 		s.logger.Error("graceful shutdown failed", "error", err)
 	}
+
+	// Stop rate-limited providers to avoid ticker leaks when present.
+	if rl, ok := s.pollerProvider().(interface{ Close() }); ok {
+		rl.Close()
+	}
+
+	if s.logger != nil {
+		s.logger.Info("shutdown complete")
+	}
+}
+
+// pollerProvider attempts to extract the underlying provider from the poller when available.
+// Best-effort helper to enable cleanup of rate-limited tickers; safe if not supported.
+func (s *Server) pollerProvider() providers.GameProvider {
+	if pa, ok := s.poller.(interface {
+		Provider() providers.GameProvider
+	}); ok {
+		return pa.Provider()
+	}
+	return nil
+}
+
+func buildMetrics(cfg config.Config, logger *slog.Logger, recorder *metrics.Recorder) (*metrics.Recorder, httpServer, func(context.Context) error) {
+	if recorder != nil {
+		return recorder, nil, nil
+	}
+
+	recCfg := metrics.TelemetryConfig{
+		Enabled:      cfg.Metrics.Enabled,
+		Port:         cfg.Metrics.Port,
+		ServiceName:  cfg.Metrics.ServiceName,
+		OtlpEndpoint: cfg.Metrics.OtlpEndpoint,
+		OtlpInsecure: cfg.Metrics.OtlpInsecure,
+	}
+
+	rec, handler, shutdown, err := metricsSetup(context.Background(), recCfg)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("metrics setup failed, continuing without telemetry", "err", err)
+		}
+		return metrics.NewRecorder(), nil, nil
+	}
+
+	var metricsSrv httpServer
+	if handler != nil && recCfg.Enabled {
+		metricsSrv = netHTTPServer{
+			srv: &http.Server{
+				Addr:    ":" + recCfg.Port,
+				Handler: handler,
+			},
+		}
+	}
+
+	return rec, metricsSrv, shutdown
 }
 
 func launchServer(name string, srv httpServer, logger *slog.Logger, onError func(error)) {
@@ -220,17 +241,6 @@ func launchServer(name string, srv httpServer, logger *slog.Logger, onError func
 			}
 		}
 	}()
-}
-
-func normalizeProviderName(raw string, provider providers.GameProvider) string {
-	raw = strings.TrimSpace(strings.ToLower(raw))
-	if raw != "" {
-		return raw
-	}
-	if provider != nil {
-		return strings.ToLower(fmt.Sprintf("%T", provider))
-	}
-	return "provider"
 }
 
 // Handler exposes the HTTP handler (useful for tests).

@@ -184,8 +184,5 @@ func (r *retryingProvider) logRetry(ctx context.Context, attempt int, delay time
 
 func (r *retryingProvider) log(ctx context.Context, level slog.Level, msg string, args ...any) {
 	logger := logging.FromContext(ctx, r.logger)
-	if logger == nil {
-		return
-	}
-	logger.Log(ctx, level, msg, args...)
+	logWithProvider(ctx, logger, level, r.providerName, msg, args...)
 }
