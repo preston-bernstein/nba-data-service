@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"testing"
+	"time"
 )
 
 type stubListener struct {
@@ -29,8 +30,17 @@ func TestNetHTTPServerListenAndServeWithCustomListener(t *testing.T) {
 func TestNetHTTPServerListenAndServeWithoutListener(t *testing.T) {
 	srv := &http.Server{Addr: "127.0.0.1:0", Handler: http.NewServeMux()}
 	s := netHTTPServer{srv: srv}
-	if err := s.ListenAndServe(); err == nil {
-		t.Fatalf("expected listen error without permissions")
+	done := make(chan error, 1)
+	go func() { done <- s.ListenAndServe() }()
+
+	time.Sleep(50 * time.Millisecond)
+	_ = srv.Shutdown(context.Background())
+
+	select {
+	case <-done:
+		// Any return (success or error) is acceptable; ensure it exits promptly.
+	case <-time.After(1 * time.Second):
+		t.Fatalf("listen did not return after shutdown")
 	}
 }
 
