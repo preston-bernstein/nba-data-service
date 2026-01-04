@@ -278,6 +278,256 @@ func TestFetchGamesRespectsMaxPagesCap(t *testing.T) {
 	}
 }
 
+func TestFetchGamesStopsWhenNoDataAndNoMeta(t *testing.T) {
+	calls := 0
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		body := `{
+			"data": []
+		}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewClient(Config{
+		BaseURL:    "http://example.com",
+		HTTPClient: &http.Client{Transport: rt},
+		MaxPages:   5,
+	})
+
+	games, err := client.FetchGames(context.Background(), "", "")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(games) != 0 {
+		t.Fatalf("expected no games, got %d", len(games))
+	}
+	if calls != 1 {
+		t.Fatalf("expected single call when no data, got %d", calls)
+	}
+}
+
+func TestFetchTeamsPaginatesAndMaps(t *testing.T) {
+	var capturedQueries []string
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		capturedQueries = append(capturedQueries, req.URL.RawQuery)
+		body := `{
+			"data": [
+				{"id": 1, "full_name": "Team One", "name": "One", "abbreviation": "ONE", "city": "City1", "conference": "East", "division": "Atlantic"}
+			],
+			"meta": { "total_pages": 2 }
+		}`
+		if len(capturedQueries) > 1 {
+			body = `{
+				"data": [
+					{"id": 2, "full_name": "Team Two", "name": "Two", "abbreviation": "TWO", "city": "City2", "conference": "West", "division": "Pacific"}
+				],
+				"meta": { "total_pages": 2 }
+			}`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewClient(Config{
+		BaseURL:    "http://example.com",
+		HTTPClient: &http.Client{Transport: rt},
+		MaxPages:   2,
+	})
+
+	teams, err := client.FetchTeams(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(teams) != 2 {
+		t.Fatalf("expected 2 teams, got %d", len(teams))
+	}
+	if teams[0].ID != "team-1" || teams[1].FullName != "Team Two" {
+		t.Fatalf("unexpected teams %+v", teams)
+	}
+	if len(capturedQueries) != 2 {
+		t.Fatalf("expected pagination, got %d calls", len(capturedQueries))
+	}
+}
+
+func TestFetchPlayersPaginatesAndMaps(t *testing.T) {
+	var capturedQueries []string
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		capturedQueries = append(capturedQueries, req.URL.RawQuery)
+		body := `{
+			"data": [
+				{"id": 10, "first_name": "Jane", "last_name": "Doe", "position": "G", "height_feet": 6, "height_inches": 1, "weight_pounds": 190, "team": {"id": 1, "full_name": "Team One", "name": "One", "abbreviation": "ONE", "city": "City1", "conference": "East", "division": "Atlantic"}, "college": "A", "country": "USA", "jersey_number": "1"}
+			],
+			"meta": { "total_pages": 2 }
+		}`
+		if len(capturedQueries) > 1 {
+			body = `{
+				"data": [
+					{"id": 11, "first_name": "John", "last_name": "Smith", "position": "F", "team": {"id": 2, "full_name": "Team Two", "name": "Two", "abbreviation": "TWO", "city": "City2", "conference": "West", "division": "Pacific"}, "college": "B", "country": "CAN", "jersey_number": "7"}
+				],
+				"meta": { "total_pages": 2 }
+			}`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewClient(Config{
+		BaseURL:    "http://example.com",
+		HTTPClient: &http.Client{Transport: rt},
+		MaxPages:   2,
+	})
+
+	players, err := client.FetchPlayers(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(players) != 2 {
+		t.Fatalf("expected 2 players, got %d", len(players))
+	}
+	if players[0].ID != "player-10" || players[1].Team.ID != "team-2" {
+		t.Fatalf("unexpected players %+v", players)
+	}
+	if len(capturedQueries) != 2 {
+		t.Fatalf("expected pagination, got %d calls", len(capturedQueries))
+	}
+}
+
+func TestFetchPlayersDedupesByID(t *testing.T) {
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		_ = req
+		body := `{
+			"data": [
+				{"id": 1, "first_name": "Jane", "last_name": "Doe", "position": "G", "team": {"id": 1, "full_name": "Team One", "name": "One", "abbreviation": "ONE", "city": "City1", "conference": "East", "division": "Atlantic"}},
+				{"id": 1, "first_name": "Jane", "last_name": "DoeUpdated", "position": "G", "team": {"id": 2, "full_name": "Team Two", "name": "Two", "abbreviation": "TWO", "city": "City2", "conference": "West", "division": "Pacific"}}
+			],
+			"meta": { "total_pages": 1 }
+		}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewClient(Config{
+		BaseURL:    "http://example.com",
+		HTTPClient: &http.Client{Transport: rt},
+		MaxPages:   1,
+	})
+
+	players, err := client.FetchPlayers(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(players) != 1 {
+		t.Fatalf("expected 1 player after dedupe, got %d", len(players))
+	}
+	if players[0].Team.ID != "team-2" {
+		t.Fatalf("expected last occurrence to win, got %+v", players[0])
+	}
+}
+
+func TestFetchTeamsHandlesNon200(t *testing.T) {
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		_ = req
+		return &http.Response{
+			StatusCode: http.StatusBadGateway,
+			Body:       io.NopCloser(strings.NewReader("boom")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewClient(Config{BaseURL: "http://example.com", HTTPClient: &http.Client{Transport: rt}})
+	if _, err := client.FetchTeams(context.Background()); err == nil {
+		t.Fatalf("expected error on non-200")
+	}
+}
+
+func TestFetchTeamsHandlesDecodeError(t *testing.T) {
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		_ = req
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{bad json")),
+			Header:     make(http.Header),
+		}, nil
+	})
+	client := NewClient(Config{BaseURL: "http://example.com", HTTPClient: &http.Client{Transport: rt}})
+	if _, err := client.FetchTeams(context.Background()); err == nil {
+		t.Fatalf("expected decode error")
+	}
+}
+
+func TestFetchTeamsDedupesByID(t *testing.T) {
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		_ = req
+		body := `{
+			"data": [
+				{"id": 1, "full_name": "Team One", "name": "One", "abbreviation": "ONE", "city": "City1", "conference": "East", "division": "Atlantic"},
+				{"id": 1, "full_name": "Team One Updated", "name": "One", "abbreviation": "ONE", "city": "City1", "conference": "East", "division": "Atlantic"}
+			],
+			"meta": { "total_pages": 1 }
+		}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewClient(Config{BaseURL: "http://example.com", HTTPClient: &http.Client{Transport: rt}})
+	teams, err := client.FetchTeams(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(teams) != 1 {
+		t.Fatalf("expected 1 team after dedupe, got %d", len(teams))
+	}
+	if teams[0].FullName != "Team One Updated" {
+		t.Fatalf("expected last occurrence to win, got %+v", teams[0])
+	}
+}
+
+func TestFetchPlayersHandlesNon200(t *testing.T) {
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		_ = req
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader("boom")),
+			Header:     make(http.Header),
+		}, nil
+	})
+	client := NewClient(Config{BaseURL: "http://example.com", HTTPClient: &http.Client{Transport: rt}})
+	if _, err := client.FetchPlayers(context.Background()); err == nil {
+		t.Fatalf("expected error on non-200")
+	}
+}
+
+func TestFetchPlayersHandlesDecodeError(t *testing.T) {
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		_ = req
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{bad json")),
+			Header:     make(http.Header),
+		}, nil
+	})
+	client := NewClient(Config{BaseURL: "http://example.com", HTTPClient: &http.Client{Transport: rt}})
+	if _, err := client.FetchPlayers(context.Background()); err == nil {
+		t.Fatalf("expected decode error")
+	}
+}
+
 func TestNewClientSetsDefaultHTTPClient(t *testing.T) {
 	c := NewClient(Config{})
 	httpClient, ok := c.httpClient.(*http.Client)
@@ -318,6 +568,11 @@ func TestParseRetryAfter(t *testing.T) {
 		{
 			name:     "empty",
 			raw:      "",
+			expected: 0,
+		},
+		{
+			name:     "invalid_string",
+			raw:      "not-a-number",
 			expected: 0,
 		},
 	}
@@ -404,5 +659,35 @@ func TestResolveDatePrefersParam(t *testing.T) {
 	got := c.resolveDate("2024-02-01", time.UTC)
 	if got != "2024-02-01" {
 		t.Fatalf("expected provided date, got %s", got)
+	}
+}
+
+func TestFetchGamesDedupesByID(t *testing.T) {
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		_ = req
+		body := `{
+			"data": [
+				{"id": 1, "date": "2024-01-02T15:00:00Z", "status": "Final", "time": "Final", "period": 4, "postseason": false, "home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" }, "visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" }, "home_team_score": 110, "visitor_team_score": 102, "season": 2023},
+				{"id": 1, "date": "2024-01-02T15:00:00Z", "status": "Final", "time": "Final", "period": 4, "postseason": false, "home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" }, "visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" }, "home_team_score": 120, "visitor_team_score": 112, "season": 2023}
+			],
+			"meta": { "total_pages": 1 }
+		}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewClient(Config{BaseURL: "http://example.com", HTTPClient: &http.Client{Transport: rt}})
+	games, err := client.FetchGames(context.Background(), "", "")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("expected 1 game after dedupe, got %d", len(games))
+	}
+	if games[0].Score.Home != 120 {
+		t.Fatalf("expected last occurrence to win, got %+v", games[0])
 	}
 }

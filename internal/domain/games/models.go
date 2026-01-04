@@ -1,4 +1,6 @@
-package domain
+package games
+
+import "github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 
 // GameStatus mirrors the shared contract for game lifecycle states.
 type GameStatus string
@@ -17,17 +19,6 @@ type Score struct {
 	Away int `json:"away"`
 }
 
-// Team represents the normalized team shape.
-type Team struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	ExternalID   int    `json:"externalId"`
-	Abbreviation string `json:"abbreviation,omitempty"`
-	City         string `json:"city,omitempty"`
-	Conference   string `json:"conference,omitempty"`
-	Division     string `json:"division,omitempty"`
-}
-
 // GameMeta stores provider metadata for a game.
 type GameMeta struct {
 	Season         string `json:"season"`
@@ -41,8 +32,8 @@ type GameMeta struct {
 type Game struct {
 	ID        string     `json:"id"`
 	Provider  string     `json:"provider"`
-	HomeTeam  Team       `json:"homeTeam"`
-	AwayTeam  Team       `json:"awayTeam"`
+	HomeTeam  teams.Team `json:"homeTeam"`
+	AwayTeam  teams.Team `json:"awayTeam"`
 	StartTime string     `json:"startTime"`
 	Status    GameStatus `json:"status"`
 	Score     Score      `json:"score"`

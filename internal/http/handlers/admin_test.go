@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/preston-bernstein/nba-data-service/internal/app/games"
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/snapshots"
 	"github.com/preston-bernstein/nba-data-service/internal/testutil"
 )
 
 type stubProvider struct {
-	games []domain.Game
+	games []domaingames.Game
 	err   error
 }
 
@@ -31,7 +31,7 @@ func callRefresh(t *testing.T, h *AdminHandler, method, path, token string) *htt
 	return rr
 }
 
-func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) ([]domaingames.Game, error) {
 	_ = ctx
 	_ = date
 	_ = tz
@@ -50,7 +50,7 @@ func TestAdminRefreshWritesSnapshot(t *testing.T) {
 	app := games.NewService(nil)
 	writer := snapshots.NewWriter(t.TempDir(), 1)
 	provider := &stubProvider{
-		games: []domain.Game{{ID: "g1"}},
+		games: []domaingames.Game{{ID: "g1"}},
 	}
 	h := NewAdminHandler(app, writer, provider, "secret", nil)
 
@@ -73,7 +73,7 @@ func TestAdminRefreshRejectsInvalidDate(t *testing.T) {
 	app := games.NewService(nil)
 	writer := snapshots.NewWriter(t.TempDir(), 1)
 	provider := &stubProvider{
-		games: []domain.Game{{ID: "g1"}},
+		games: []domaingames.Game{{ID: "g1"}},
 	}
 	h := NewAdminHandler(app, writer, provider, "secret", nil)
 
@@ -84,7 +84,7 @@ func TestAdminRefreshRejectsInvalidDate(t *testing.T) {
 }
 
 func TestAdminRefreshValidatesTimezone(t *testing.T) {
-	h := NewAdminHandler(games.NewService(nil), snapshots.NewWriter(t.TempDir(), 1), &stubProvider{games: []domain.Game{{ID: "g1"}}}, "secret", nil)
+	h := NewAdminHandler(games.NewService(nil), snapshots.NewWriter(t.TempDir(), 1), &stubProvider{games: []domaingames.Game{{ID: "g1"}}}, "secret", nil)
 
 	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?tz=bad/tz", "secret")
 	if rr.Code != http.StatusBadRequest {
@@ -93,7 +93,7 @@ func TestAdminRefreshValidatesTimezone(t *testing.T) {
 }
 
 func TestAdminRefreshNoGames(t *testing.T) {
-	h := NewAdminHandler(games.NewService(nil), snapshots.NewWriter(t.TempDir(), 1), &stubProvider{games: []domain.Game{}}, "secret", nil)
+	h := NewAdminHandler(games.NewService(nil), snapshots.NewWriter(t.TempDir(), 1), &stubProvider{games: []domaingames.Game{}}, "secret", nil)
 
 	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?date=2024-01-01", "secret")
 	if rr.Code != http.StatusBadRequest {
@@ -109,7 +109,7 @@ func TestAdminRefreshHandlesWriterError(t *testing.T) {
 		t.Fatalf("failed to create placeholder file: %v", err)
 	}
 	writer := snapshots.NewWriter(tmpFile, 1)
-	h := NewAdminHandler(app, writer, &stubProvider{games: []domain.Game{{ID: "g1"}}}, "secret", nil)
+	h := NewAdminHandler(app, writer, &stubProvider{games: []domaingames.Game{{ID: "g1"}}}, "secret", nil)
 
 	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?date=2024-01-01", "secret")
 	if rr.Code != http.StatusInternalServerError {

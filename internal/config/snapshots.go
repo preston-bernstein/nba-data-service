@@ -4,14 +4,16 @@ import "time"
 
 // SnapshotSyncConfig controls automatic snapshot backfill/prune behavior.
 type SnapshotSyncConfig struct {
-	Enabled        bool
-	Days           int           // how many past days to maintain
-	FutureDays     int           // how many future days to prefetch
-	Interval       time.Duration // delay between snapshot fetches
-	DailyHourUTC   int           // hour of day (0-23) for daily prune/backfill
-	RetentionDays  int           // retention for pruning (games)
-	AdminToken     string        // reused for refresh endpoint auth
-	SnapshotFolder string        // base path for snapshots
+	Enabled             bool
+	Days                int           // how many past days to maintain
+	FutureDays          int           // how many future days to prefetch
+	Interval            time.Duration // delay between snapshot fetches
+	DailyHourUTC        int           // hour of day (0-23) for daily prune/backfill
+	RetentionDays       int           // retention for pruning (games)
+	AdminToken          string        // reused for refresh endpoint auth
+	SnapshotFolder      string        // base path for snapshots
+	TeamsRefreshDays    int           // how often to refresh teams (days)
+	PlayersRefreshHours int           // how often to refresh players (hours)
 }
 
 func loadSnapshotSync() SnapshotSyncConfig {
@@ -22,13 +24,15 @@ func loadSnapshotSync() SnapshotSyncConfig {
 	retentionDays := pastDays + 1
 
 	return SnapshotSyncConfig{
-		Enabled:        boolEnvOrDefault(envSnapshotSync, defaultSnapshotSync),
-		Days:           pastDays,
-		FutureDays:     futureDays,
-		Interval:       durationEnvOrDefault(envSnapshotRate, defaultSnapshotInterval),
-		DailyHourUTC:   intEnvOrDefault(envSnapshotHour, defaultSnapshotDailyHour),
-		RetentionDays:  retentionDays,
-		AdminToken:     envOrDefault(envAdminToken, ""),
-		SnapshotFolder: "data/snapshots",
+		Enabled:             boolEnvOrDefault(envSnapshotSync, defaultSnapshotSync),
+		Days:                pastDays,
+		FutureDays:          futureDays,
+		Interval:            durationEnvOrDefault(envSnapshotRate, defaultSnapshotInterval),
+		DailyHourUTC:        intEnvOrDefault(envSnapshotHour, defaultSnapshotDailyHour),
+		RetentionDays:       retentionDays,
+		AdminToken:          envOrDefault(envAdminToken, ""),
+		SnapshotFolder:      "data/snapshots",
+		TeamsRefreshDays:    intEnvOrDefault(envSnapshotTeamsDays, defaultTeamsRefreshDays),
+		PlayersRefreshHours: intEnvOrDefault(envSnapshotPlayersHrs, defaultPlayersRefreshHrs),
 	}
 }

@@ -5,19 +5,19 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 )
 
-func simpleSnapshot(date string) domain.TodayResponse {
-	return domain.TodayResponse{
+func simpleSnapshot(date string) domaingames.TodayResponse {
+	return domaingames.TodayResponse{
 		Date: date,
-		Games: []domain.Game{
+		Games: []domaingames.Game{
 			{ID: date},
 		},
 	}
 }
 
-func writeSnapshot(t *testing.T, w *Writer, date string, snap domain.TodayResponse) {
+func writeSnapshot(t *testing.T, w *Writer, date string, snap domaingames.TodayResponse) {
 	t.Helper()
 	if w == nil {
 		t.Fatalf("writer is nil for date %s", date)

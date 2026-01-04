@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/preston-bernstein/nba-data-service/internal/app/games"
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 	"github.com/preston-bernstein/nba-data-service/internal/snapshots"
 )
@@ -89,7 +89,7 @@ func (h *AdminHandler) RefreshSnapshots(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	snap := domain.TodayResponse{
+	snap := domaingames.TodayResponse{
 		Date:  date,
 		Games: games,
 	}

@@ -55,3 +55,17 @@ func TestWriteErrorFallsBackToHeaderRequestID(t *testing.T) {
 		t.Fatalf("expected header request id used when context missing")
 	}
 }
+
+func TestIsActiveOnly(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/teams?activeOnly=true", nil)
+	if !isActiveOnly(req) {
+		t.Fatalf("expected activeOnly true for query param")
+	}
+	req = httptest.NewRequest(http.MethodGet, "/teams?activeOnly=0", nil)
+	if isActiveOnly(req) {
+		t.Fatalf("expected activeOnly false for zero value")
+	}
+	if isActiveOnly(nil) {
+		t.Fatalf("expected false when request is nil")
+	}
+}

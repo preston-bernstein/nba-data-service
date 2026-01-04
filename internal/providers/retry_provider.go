@@ -7,7 +7,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/players"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 )
@@ -21,13 +23,15 @@ type backoffFunc func(attempt int) time.Duration
 
 // retryingProvider wraps a GameProvider with retry/backoff behavior.
 type retryingProvider struct {
-	inner        GameProvider
-	logger       *slog.Logger
-	metrics      *metrics.Recorder
-	providerName string
-	maxAttempts  int
-	backoffFn    backoffFunc
-	rng          *rand.Rand
+	gameProvider   GameProvider
+	teamProvider   TeamProvider
+	playerProvider PlayerProvider
+	logger         *slog.Logger
+	metrics        *metrics.Recorder
+	providerName   string
+	maxAttempts    int
+	backoffFn      backoffFunc
+	rng            *rand.Rand
 }
 
 // NewRetryingProvider wraps the given provider with retries. If maxAttempts/backoff are <= 0, defaults are used.
@@ -58,11 +62,13 @@ func NewRetryingProviderWithRNG(inner GameProvider, logger *slog.Logger, metrics
 	}
 
 	return &retryingProvider{
-		inner:        inner,
-		logger:       logger,
-		metrics:      metricsRecorder,
-		providerName: providerName,
-		maxAttempts:  maxAttempts,
+		gameProvider:   inner,
+		teamProvider:   asTeamProvider(inner),
+		playerProvider: asPlayerProvider(inner),
+		logger:         logger,
+		metrics:        metricsRecorder,
+		providerName:   providerName,
+		maxAttempts:    maxAttempts,
 		backoffFn: func(attempt int) time.Duration {
 			return time.Duration(attempt) * backoff
 		},
@@ -70,12 +76,12 @@ func NewRetryingProviderWithRNG(inner GameProvider, logger *slog.Logger, metrics
 	}
 }
 
-func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
 	var lastErr error
 
 	for attempt := 1; attempt <= r.maxAttempts; attempt++ {
 		start := time.Now()
-		games, err := r.inner.FetchGames(ctx, date, tz)
+		gm, err := r.gameProvider.FetchGames(ctx, date, tz)
 		r.recordAttempt(time.Since(start), err)
 
 		if err == nil {
@@ -85,7 +91,7 @@ func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz strin
 					"attempt", attempt,
 				)
 			}
-			return games, nil
+			return gm, nil
 		}
 		lastErr = err
 
@@ -104,6 +110,72 @@ func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz strin
 		}
 	}
 
+	r.log(ctx, slog.LevelWarn, "provider fetch failed", "provider", r.providerName, "attempts", r.maxAttempts, "err", lastErr)
+	return nil, lastErr
+}
+
+func (r *retryingProvider) FetchTeams(ctx context.Context) ([]teams.Team, error) {
+	if r.teamProvider == nil {
+		r.log(ctx, slog.LevelWarn, "provider unavailable", "provider", r.providerName)
+		return nil, ErrProviderUnavailable
+	}
+	var lastErr error
+	for attempt := 1; attempt <= r.maxAttempts; attempt++ {
+		start := time.Now()
+		resp, err := r.teamProvider.FetchTeams(ctx)
+		r.recordAttempt(time.Since(start), err)
+		if err == nil {
+			if attempt > 1 {
+				r.log(ctx, slog.LevelInfo, "provider fetch succeeded", "provider", r.providerName, "attempt", attempt)
+			}
+			return resp, nil
+		}
+		lastErr = err
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if attempt == r.maxAttempts {
+			break
+		}
+		delay := r.computeDelay(err, attempt)
+		r.logRetry(ctx, attempt, delay, err)
+		if err := r.sleep(ctx, delay); err != nil {
+			return nil, err
+		}
+	}
+	r.log(ctx, slog.LevelWarn, "provider fetch failed", "provider", r.providerName, "attempts", r.maxAttempts, "err", lastErr)
+	return nil, lastErr
+}
+
+func (r *retryingProvider) FetchPlayers(ctx context.Context) ([]players.Player, error) {
+	if r.playerProvider == nil {
+		r.log(ctx, slog.LevelWarn, "provider unavailable", "provider", r.providerName)
+		return nil, ErrProviderUnavailable
+	}
+	var lastErr error
+	for attempt := 1; attempt <= r.maxAttempts; attempt++ {
+		start := time.Now()
+		resp, err := r.playerProvider.FetchPlayers(ctx)
+		r.recordAttempt(time.Since(start), err)
+		if err == nil {
+			if attempt > 1 {
+				r.log(ctx, slog.LevelInfo, "provider fetch succeeded", "provider", r.providerName, "attempt", attempt)
+			}
+			return resp, nil
+		}
+		lastErr = err
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if attempt == r.maxAttempts {
+			break
+		}
+		delay := r.computeDelay(err, attempt)
+		r.logRetry(ctx, attempt, delay, err)
+		if err := r.sleep(ctx, delay); err != nil {
+			return nil, err
+		}
+	}
 	r.log(ctx, slog.LevelWarn, "provider fetch failed", "provider", r.providerName, "attempts", r.maxAttempts, "err", lastErr)
 	return nil, lastErr
 }

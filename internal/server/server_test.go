@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/preston-bernstein/nba-data-service/internal/config"
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/poller"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
@@ -28,7 +28,7 @@ func TestServerServesHealthAndGames(t *testing.T) {
 	game.StartTime = time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC).Format(time.RFC3339)
 
 	provider := &testutil.NotifyingProvider{
-		Games:  []domain.Game{game},
+		Games:  []domaingames.Game{game},
 		Notify: make(chan struct{}),
 	}
 
@@ -50,7 +50,7 @@ func TestServerServesHealthAndGames(t *testing.T) {
 	gamesRec := testutil.Serve(router, http.MethodGet, "/games/today", nil)
 	testutil.AssertStatus(t, gamesRec, http.StatusOK)
 
-	var today domain.TodayResponse
+	var today domaingames.TodayResponse
 	testutil.DecodeJSON(t, gamesRec, &today)
 
 	if len(today.Games) != 1 {
@@ -128,6 +128,22 @@ func TestNormalizeProviderName(t *testing.T) {
 	}
 	if got := normalizeProviderName("", nil); got != "provider" {
 		t.Fatalf("expected fallback provider, got %s", got)
+	}
+}
+
+func TestLaunchServerInvokesOnError(t *testing.T) {
+	stub := &testutil.ErrHTTPServer{}
+	called := make(chan error, 1)
+	launchServer("http", stub, nil, func(err error) {
+		called <- err
+	})
+	select {
+	case err := <-called:
+		if err == nil || err.Error() != "listen failure" {
+			t.Fatalf("expected listen failure, got %v", err)
+		}
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("expected onError to be called")
 	}
 }
 func TestStartMetricsSkipsWhenNil(t *testing.T) {
@@ -216,7 +232,7 @@ func TestServerHandlesProviderErrorGracefully(t *testing.T) {
 
 	testutil.AssertStatus(t, gamesRec, http.StatusOK)
 
-	var today domain.TodayResponse
+	var today domaingames.TodayResponse
 	testutil.DecodeJSON(t, gamesRec, &today)
 
 	if len(today.Games) != 0 {
@@ -289,7 +305,7 @@ func TestGracefulShutdownContinuesWhenPollerStopErrors(t *testing.T) {
 
 type closableProvider struct{ closed bool }
 
-func (c *closableProvider) FetchGames(ctx context.Context, date, tz string) ([]domain.Game, error) {
+func (c *closableProvider) FetchGames(ctx context.Context, date, tz string) ([]domaingames.Game, error) {
 	return nil, nil
 }
 

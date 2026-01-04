@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/preston-bernstein/nba-data-service/internal/config"
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 	"github.com/preston-bernstein/nba-data-service/internal/testutil"
@@ -15,7 +15,7 @@ import (
 
 type nopProvider struct{}
 
-func (nopProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (nopProvider) FetchGames(ctx context.Context, date string, tz string) ([]domaingames.Game, error) {
 	return nil, nil
 }
 

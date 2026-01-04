@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/snapshots"
 )
 
@@ -17,9 +17,9 @@ func NewTempWriter(t *testing.T, retention int) *snapshots.Writer {
 // WriteSnapshot writes a snapshot with a single game for the date.
 func WriteSnapshot(t *testing.T, w *snapshots.Writer, date string) {
 	t.Helper()
-	if err := w.WriteGamesSnapshot(date, domain.TodayResponse{
+	if err := w.WriteGamesSnapshot(date, domaingames.TodayResponse{
 		Date: date,
-		Games: []domain.Game{
+		Games: []domaingames.Game{
 			{ID: date},
 		},
 	}); err != nil {

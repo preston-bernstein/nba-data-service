@@ -17,6 +17,8 @@ const (
 	envSnapshotFutureDays = "SNAPSHOT_FUTURE_DAYS"
 	envSnapshotRate       = "SNAPSHOT_SYNC_INTERVAL"
 	envSnapshotHour       = "SNAPSHOT_DAILY_HOUR"
+	envSnapshotTeamsDays  = "SNAPSHOT_TEAMS_REFRESH_DAYS"
+	envSnapshotPlayersHrs = "SNAPSHOT_PLAYERS_REFRESH_HOURS"
 
 	defaultPort = "4000"
 	// Conservative default poll interval to respect upstream quotas (balldontlie: 5 req/min).
@@ -30,4 +32,7 @@ const (
 	defaultSnapshotInterval = 90 * Duration(time.Second)
 	// UTC hour to run daily snapshot prune/backfill (2 AM UTC by default).
 	defaultSnapshotDailyHour = 2
+	// Static data refresh defaults.
+	defaultTeamsRefreshDays  = 7
+	defaultPlayersRefreshHrs = 24
 )

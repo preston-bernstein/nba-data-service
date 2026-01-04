@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"github.com/preston-bernstein/nba-data-service/internal/app/games"
+	"github.com/preston-bernstein/nba-data-service/internal/app/players"
+	"github.com/preston-bernstein/nba-data-service/internal/app/teams"
 	"github.com/preston-bernstein/nba-data-service/internal/config"
 	httpserver "github.com/preston-bernstein/nba-data-service/internal/http"
 	"github.com/preston-bernstein/nba-data-service/internal/http/handlers"
@@ -20,14 +22,17 @@ import (
 var metricsSetup = metrics.Setup
 
 type Server struct {
-	cfg           config.Config
-	logger        *slog.Logger
-	metrics       *metrics.Recorder
-	domainService *games.Service
-	httpServer    httpServer
-	metricsServer httpServer
-	poller        Poller
-	metricsStop   func(context.Context) error
+	cfg            config.Config
+	logger         *slog.Logger
+	metrics        *metrics.Recorder
+	store          *store.MemoryStore
+	gamesService   *games.Service
+	teamsService   *teams.Service
+	playersService *players.Service
+	httpServer     httpServer
+	metricsServer  httpServer
+	poller         Poller
+	metricsStop    func(context.Context) error
 }
 
 // New constructs a server with default provider and poller wiring.
@@ -49,47 +54,53 @@ func newServerWithMetrics(cfg config.Config, logger *slog.Logger, provider provi
 	} else {
 		provider = providers.NewRetryingProvider(provider, logger, recorder, normalizeProviderName(cfg.Provider, provider), 0, 0)
 	}
-	domainService := buildDomainService()
-	plr := poller.New(provider, domainService, logger, recorder, cfg.PollInterval)
-	httpSrv := buildHTTPServer(cfg, domainService, logger, provider, recorder, plr)
+	memoryStore, gameSvc, teamSvc, playerSvc := buildServices()
+	plr := poller.New(provider, gameSvc, logger, recorder, cfg.PollInterval)
+	httpSrv := buildHTTPServer(cfg, memoryStore, gameSvc, teamSvc, playerSvc, logger, provider, recorder, plr)
 
 	return &Server{
-		cfg:           cfg,
-		logger:        logger,
-		metrics:       recorder,
-		domainService: domainService,
-		httpServer:    httpSrv,
-		metricsServer: metricsSrv,
-		poller:        plr,
-		metricsStop:   metricsShutdown,
+		cfg:            cfg,
+		logger:         logger,
+		metrics:        recorder,
+		store:          memoryStore,
+		gamesService:   gameSvc,
+		teamsService:   teamSvc,
+		playersService: playerSvc,
+		httpServer:     httpSrv,
+		metricsServer:  metricsSrv,
+		poller:         plr,
+		metricsStop:    metricsShutdown,
 	}
 }
 
 // newServerWithDeps is used for testing to inject custom components.
-func newServerWithDeps(cfg config.Config, logger *slog.Logger, svc *games.Service, httpSrv httpServer, plr Poller) *Server {
+func newServerWithDeps(cfg config.Config, logger *slog.Logger, gameSvc *games.Service, httpSrv httpServer, plr Poller) *Server {
 	return &Server{
-		cfg:           cfg,
-		logger:        logger,
-		domainService: svc,
-		httpServer:    httpSrv,
-		poller:        plr,
+		cfg:            cfg,
+		logger:         logger,
+		store:          nil,
+		gamesService:   gameSvc,
+		teamsService:   nil,
+		playersService: nil,
+		httpServer:     httpSrv,
+		poller:         plr,
 	}
 }
 
-func buildDomainService() *games.Service {
+func buildServices() (*store.MemoryStore, *games.Service, *teams.Service, *players.Service) {
 	memoryStore := store.NewMemoryStore()
-	return games.NewService(memoryStore)
+	return memoryStore, games.NewService(memoryStore), teams.NewService(memoryStore), players.NewService(memoryStore)
 }
 
-func buildHTTPServer(cfg config.Config, svc *games.Service, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder, plr Poller) httpServer {
+func buildHTTPServer(cfg config.Config, memoryStore *store.MemoryStore, gameSvc *games.Service, teamSvc *teams.Service, playerSvc *players.Service, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder, plr Poller) httpServer {
 	var statusFn func() poller.Status
 	if plr != nil {
 		statusFn = plr.Status
 	}
 
-	snaps := buildSnapshots(cfg, provider, logger)
-	handler := handlers.NewHandler(svc, snaps.store, logger, statusFn)
-	admin := handlers.NewAdminHandler(svc, snaps.writer, provider, cfg.Snapshots.AdminToken, logger)
+	snaps := buildSnapshots(cfg, provider, memoryStore, logger)
+	handler := handlers.NewHandler(gameSvc, teamSvc, playerSvc, snaps.store, logger, statusFn)
+	admin := handlers.NewAdminHandler(gameSvc, snaps.writer, provider, cfg.Snapshots.AdminToken, logger)
 	router := httpserver.NewRouter(handler)
 	// Optionally mount admin refresh endpoint if token is set.
 	if admin != nil && cfg.Snapshots.AdminToken != "" {

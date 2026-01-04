@@ -3,7 +3,9 @@ package balldontlie
 import (
 	"testing"
 
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/players"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 )
 
 func TestMapGameTransformsFields(t *testing.T) {
@@ -26,7 +28,7 @@ func TestMapGameTransformsFields(t *testing.T) {
 	if game.ID != "balldontlie-42" || game.Provider != "balldontlie" {
 		t.Fatalf("unexpected id/provider: %+v", game)
 	}
-	if game.Status != domain.StatusInProgress {
+	if game.Status != games.StatusInProgress {
 		t.Fatalf("expected in progress status, got %s", game.Status)
 	}
 	if game.Score.Home != 55 || game.Score.Away != 50 {
@@ -47,12 +49,12 @@ func TestMapGameTransformsFields(t *testing.T) {
 }
 
 func TestMapStatusCoversVariants(t *testing.T) {
-	cases := map[string]domain.GameStatus{
-		"Final":       domain.StatusFinal,
-		"In Progress": domain.StatusInProgress,
-		"Postponed":   domain.StatusPostponed,
-		"Canceled":    domain.StatusCanceled,
-		"Unknown":     domain.StatusScheduled,
+	cases := map[string]games.GameStatus{
+		"Final":       games.StatusFinal,
+		"In Progress": games.StatusInProgress,
+		"Postponed":   games.StatusPostponed,
+		"Canceled":    games.StatusCanceled,
+		"Unknown":     games.StatusScheduled,
 	}
 
 	for input, expected := range cases {
@@ -65,5 +67,75 @@ func TestMapStatusCoversVariants(t *testing.T) {
 func TestFormatSeason(t *testing.T) {
 	if got := formatSeason(2024); got != "2024" {
 		t.Fatalf("expected season to be formatted as string, got %s", got)
+	}
+}
+
+func TestMapTeamCoversFields(t *testing.T) {
+	raw := teamResponse{
+		ID:           9,
+		Abbreviation: "ABC",
+		City:         "City",
+		Conference:   "East",
+		Division:     "Atlantic",
+		FullName:     "ABC City",
+		Name:         "ABC",
+	}
+
+	team := mapTeam(raw)
+	expected := teams.Team{
+		ID:           "team-9",
+		Name:         "ABC",
+		FullName:     "ABC City",
+		Abbreviation: "ABC",
+		City:         "City",
+		Conference:   "East",
+		Division:     "Atlantic",
+	}
+	if team != expected {
+		t.Fatalf("unexpected team %+v", team)
+	}
+}
+
+func TestMapPlayerCoversFields(t *testing.T) {
+	raw := playerResponse{
+		ID:           12,
+		FirstName:    "Jane",
+		LastName:     "Doe",
+		Position:     "G",
+		HeightFeet:   6,
+		HeightInches: 1,
+		WeightPounds: 190,
+		Team: teamResponse{
+			ID:           9,
+			Abbreviation: "ABC",
+			City:         "City",
+			Conference:   "East",
+			Division:     "Atlantic",
+			FullName:     "ABC City",
+			Name:         "ABC",
+		},
+		College:      "College",
+		Country:      "USA",
+		JerseyNumber: "7",
+	}
+
+	player := mapPlayer(raw)
+	if player.ID != "player-12" || player.FirstName != "Jane" || player.LastName != "Doe" || player.Position != "G" {
+		t.Fatalf("unexpected base fields %+v", player)
+	}
+	if player.HeightFeet != 6 || player.HeightInches != 1 || player.WeightPounds != 190 {
+		t.Fatalf("unexpected measurements %+v", player)
+	}
+	if player.Team.ID != "team-9" || player.Team.FullName != "ABC City" {
+		t.Fatalf("unexpected team mapping %+v", player.Team)
+	}
+	expectedMeta := players.PlayerMeta{
+		UpstreamPlayerID: 12,
+		College:          "College",
+		Country:          "USA",
+		JerseyNumber:     "7",
+	}
+	if player.Meta != expectedMeta {
+		t.Fatalf("unexpected meta %+v", player.Meta)
 	}
 }
