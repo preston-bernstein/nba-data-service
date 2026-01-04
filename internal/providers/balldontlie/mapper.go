@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 func mapGame(g gameResponse) domain.Game {

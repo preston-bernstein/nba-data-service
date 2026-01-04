@@ -99,6 +99,44 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "Admin Refresh Snapshot",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/snapshots/refresh?date={{date}}&tz={{tz}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "snapshots",
+            "refresh"
+          ],
+          "query": [
+            {
+              "key": "date",
+              "value": "{{date}}",
+              "description": "YYYY-MM-DD; defaults to today if omitted"
+            },
+            {
+              "key": "tz",
+              "value": "{{tz}}",
+              "description": "Optional IANA timezone for the date resolution"
+            }
+          ]
+        },
+        "description": "Refresh a games snapshot for the given date using the configured provider. Protected by ADMIN_TOKEN."
+      },
+      "response": []
     }
   ],
   "event": [],
@@ -114,6 +152,14 @@
     {
       "key": "id",
       "value": "fixture-1"
+    },
+    {
+      "key": "tz",
+      "value": "America/New_York"
+    },
+    {
+      "key": "adminToken",
+      "value": "change-me"
     }
   ]
 }

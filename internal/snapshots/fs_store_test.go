@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 func TestFSStoreLoadsGamesSnapshot(t *testing.T) {

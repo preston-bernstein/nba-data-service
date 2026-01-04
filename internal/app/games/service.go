@@ -1,6 +1,6 @@
 package games
 
-import "nba-data-service/internal/domain"
+import "github.com/preston-bernstein/nba-data-service/internal/domain"
 
 // Store defines the contract for persisting and retrieving games.
 type Store interface {

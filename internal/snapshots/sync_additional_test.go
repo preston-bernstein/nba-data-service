@@ -8,8 +8,8 @@ import (
 
 	"log/slog"
 
-	"nba-data-service/internal/domain"
-	"nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/providers"
 )
 
 type errProvider struct{ err error }

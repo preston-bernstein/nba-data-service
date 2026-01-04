@@ -3,7 +3,7 @@ package games
 import (
 	"testing"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 type stubStore struct {

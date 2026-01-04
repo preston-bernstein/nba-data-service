@@ -1,7 +1,7 @@
 package testutil
 
 import (
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 // SampleGame returns a minimal game fixture with the provided id.
