@@ -9,6 +9,7 @@ import (
 
 	"github.com/preston-bernstein/nba-data-service/internal/app/games"
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/http/requestutil"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 	"github.com/preston-bernstein/nba-data-service/internal/snapshots"
 )
@@ -129,17 +130,7 @@ func (h *AdminHandler) authorize(r *http.Request) bool {
 }
 
 func clientIP(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
-		}
-		return forwarded
-	}
-	return r.RemoteAddr
+	return requestutil.ClientIP(r)
 }
 
 func logWarn(logger *slog.Logger, msg string, args ...any) {

@@ -118,132 +118,6 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
-  /teams:
-    get:
-      summary: Get cached teams
-      parameters:
-        - name: activeOnly
-          in: query
-          required: false
-          description: When true, return only the latest active roster view.
-          schema:
-            type: boolean
-      responses:
-        "200":
-          description: Teams currently cached in memory
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Team"
-        "503":
-          description: Teams cache unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-  /teams/{id}:
-    get:
-      summary: Get a team by ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "400":
-          description: Invalid or missing team id
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "200":
-          description: The requested team
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Team"
-        "404":
-          description: Team not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: Teams cache unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-  /players:
-    get:
-      summary: Get cached players
-      parameters:
-        - name: activeOnly
-          in: query
-          required: false
-          description: When true, return only the latest active roster view.
-          schema:
-            type: boolean
-      responses:
-        "200":
-          description: Players currently cached in memory
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Player"
-        "503":
-          description: Players cache unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
-  /players/{id}:
-    get:
-      summary: Get a player by ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "400":
-          description: Invalid or missing player id
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "200":
-          description: The requested player
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Player"
-        "404":
-          description: Player not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: Players cache unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
 components:
   parameters:
     TzParam:
@@ -352,6 +226,10 @@ components:
           type: integer
         weightPounds:
           type: integer
+        height:
+          type: string
+        weight:
+          type: string
         team:
           $ref: "#/components/schemas/Team"
         meta:
@@ -368,6 +246,16 @@ components:
           type: string
         jerseyNumber:
           type: string
+        height:
+          type: string
+        weight:
+          type: string
+        draftYear:
+          type: integer
+        draftRound:
+          type: integer
+        draftNumber:
+          type: integer
       required: [upstreamPlayerId]
     Score:
       type: object

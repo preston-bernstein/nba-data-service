@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/preston-bernstein/nba-data-service/internal/app/games"
-	"github.com/preston-bernstein/nba-data-service/internal/app/players"
-	"github.com/preston-bernstein/nba-data-service/internal/app/teams"
 	"github.com/preston-bernstein/nba-data-service/internal/http/handlers"
 	"github.com/preston-bernstein/nba-data-service/internal/store"
 	"github.com/preston-bernstein/nba-data-service/internal/testutil"
@@ -15,7 +13,7 @@ import (
 func TestRouterRoutesKnownPaths(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := games.NewService(ms)
-	h := handlers.NewHandler(svc, teams.NewService(ms), players.NewService(ms), nil, nil, nil)
+	h := handlers.NewHandler(svc, nil, nil, nil)
 
 	router := NewRouter(h)
 
@@ -35,7 +33,7 @@ func TestRouterRoutesKnownPaths(t *testing.T) {
 func TestRouterUnknownRouteReturns404(t *testing.T) {
 	ms := store.NewMemoryStore()
 	svc := games.NewService(ms)
-	h := handlers.NewHandler(svc, teams.NewService(ms), players.NewService(ms), nil, nil, nil)
+	h := handlers.NewHandler(svc, nil, nil, nil)
 
 	router := NewRouter(h)
 

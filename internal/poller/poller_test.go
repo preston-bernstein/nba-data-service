@@ -253,3 +253,28 @@ func TestPollerProviderExposesWrappedProvider(t *testing.T) {
 		t.Fatalf("expected provider returned")
 	}
 }
+
+func BenchmarkPollerFetchOnce(b *testing.B) {
+	provider := &stubProvider{
+		games: []domaingames.Game{
+			{
+				ID:        "bench-game",
+				Provider:  "fixture",
+				HomeTeam:  teams.Team{ID: "home", Name: "Home"},
+				AwayTeam:  teams.Team{ID: "away", Name: "Away"},
+				StartTime: time.Date(2024, 1, 1, 19, 30, 0, 0, time.UTC).Format(time.RFC3339),
+				Status:    domaingames.StatusFinal,
+				Score:     domaingames.Score{Home: 100, Away: 95},
+			},
+		},
+	}
+	s := store.NewMemoryStore()
+	svc := games.NewService(s)
+	p := New(provider, svc, nil, nil, time.Second)
+	ctx := context.Background()
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		p.fetchOnce(ctx)
+	}
+}

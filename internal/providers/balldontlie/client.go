@@ -3,6 +3,7 @@ package balldontlie
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,8 +13,6 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
-	"github.com/preston-bernstein/nba-data-service/internal/domain/players"
-	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 )
 
@@ -24,6 +23,7 @@ type Config struct {
 	HTTPClient *http.Client
 	Timezone   string
 	MaxPages   int
+	PageDelay  time.Duration
 }
 
 // Client fetches games from the balldontlie API and maps them to domain models.
@@ -34,6 +34,7 @@ type Client struct {
 	now        func() time.Time
 	loc        *time.Location
 	maxPages   int
+	pageDelay  time.Duration
 }
 
 // NewClient constructs a balldontlie client with the provided configuration.
@@ -45,6 +46,7 @@ func NewClient(cfg Config) *Client {
 		now:        time.Now,
 		loc:        resolveLocation(cfg.Timezone),
 		maxPages:   resolveMaxPages(cfg.MaxPages),
+		pageDelay:  cfg.PageDelay,
 	}
 }
 
@@ -72,79 +74,11 @@ func (c *Client) FetchGames(ctx context.Context, date string, tz string) ([]doma
 		return mapped, payload.Meta.TotalPages, nil
 	}
 
-	games, err := fetchPaged(ctx, c.maxPages, c.now, c.httpClient, buildReq, decode)
+	games, err := fetchPaged(ctx, c.maxPages, c.pageDelay, c.now, c.httpClient, buildReq, decode)
 	if err != nil {
 		return nil, err
 	}
 	return dedupe(games, func(g domaingames.Game) string { return g.ID }), nil
-}
-
-// FetchTeams retrieves teams from balldontlie.
-func (c *Client) FetchTeams(ctx context.Context) ([]teams.Team, error) {
-	buildReq := func(page int) (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/teams", nil)
-		if err != nil {
-			return nil, err
-		}
-		q := req.URL.Query()
-		q.Set("per_page", strconv.Itoa(defaultPerPage))
-		q.Set("page", strconv.Itoa(page))
-		req.URL.RawQuery = q.Encode()
-		if c.apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+c.apiKey)
-		}
-		return req, nil
-	}
-	decode := func(dec *json.Decoder) ([]teams.Team, int, error) {
-		var payload teamsResponse
-		if err := dec.Decode(&payload); err != nil {
-			return nil, 0, err
-		}
-		mapped := make([]teams.Team, 0, len(payload.Data))
-		for _, t := range payload.Data {
-			mapped = append(mapped, mapTeam(t))
-		}
-		return mapped, payload.Meta.TotalPages, nil
-	}
-	items, err := fetchPaged(ctx, c.maxPages, c.now, c.httpClient, buildReq, decode)
-	if err != nil {
-		return nil, err
-	}
-	return dedupe(items, func(t teams.Team) string { return t.ID }), nil
-}
-
-// FetchPlayers retrieves players from balldontlie.
-func (c *Client) FetchPlayers(ctx context.Context) ([]players.Player, error) {
-	buildReq := func(page int) (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/players", nil)
-		if err != nil {
-			return nil, err
-		}
-		q := req.URL.Query()
-		q.Set("per_page", strconv.Itoa(defaultPerPage))
-		q.Set("page", strconv.Itoa(page))
-		req.URL.RawQuery = q.Encode()
-		if c.apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+c.apiKey)
-		}
-		return req, nil
-	}
-	decode := func(dec *json.Decoder) ([]players.Player, int, error) {
-		var payload playersResponse
-		if err := dec.Decode(&payload); err != nil {
-			return nil, 0, err
-		}
-		mapped := make([]players.Player, 0, len(payload.Data))
-		for _, pResp := range payload.Data {
-			mapped = append(mapped, mapPlayer(pResp))
-		}
-		return mapped, payload.Meta.TotalPages, nil
-	}
-	items, err := fetchPaged(ctx, c.maxPages, c.now, c.httpClient, buildReq, decode)
-	if err != nil {
-		return nil, err
-	}
-	return dedupe(items, func(p players.Player) string { return p.ID }), nil
 }
 
 func (c *Client) buildRequest(ctx context.Context, date string, page int, loc *time.Location) (*http.Request, error) {
@@ -186,13 +120,14 @@ func classifyErrorResponse(resp *http.Response, body []byte, now time.Time) erro
 			Message:    msg,
 		}
 	}
-	return fmt.Errorf(msg)
+	return errors.New(msg)
 }
 
 // fetchPaged centralizes pagination and error handling for list endpoints.
 func fetchPaged[T any](
 	ctx context.Context,
 	maxPages int,
+	pageDelay time.Duration,
 	now func() time.Time,
 	doer httpDoer,
 	buildReq func(page int) (*http.Request, error),
@@ -233,6 +168,13 @@ func fetchPaged[T any](
 		} else {
 			if len(data) == 0 || len(data) < defaultPerPage || page >= maxPages {
 				break
+			}
+		}
+		if pageDelay > 0 {
+			select {
+			case <-ctx.Done():
+				return all, ctx.Err()
+			case <-time.After(pageDelay):
 			}
 		}
 		page++
