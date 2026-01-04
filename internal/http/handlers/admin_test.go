@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/preston-bernstein/nba-data-service/internal/app/games"
@@ -189,9 +190,27 @@ func TestClientIPFallsBackToRemoteAddr(t *testing.T) {
 	}
 }
 
+func TestClientIPHandlesNilRequest(t *testing.T) {
+	if got := clientIP(nil); got != "" {
+		t.Fatalf("expected empty string for nil request, got %q", got)
+	}
+}
+
 func TestAdminTokenFromEnv(t *testing.T) {
 	t.Setenv("ADMIN_TOKEN", "abc")
 	if got := AdminTokenFromEnv(); got != "abc" {
 		t.Fatalf("expected token from env, got %s", got)
+	}
+}
+
+func TestLogHelpersHandleNilAndLogger(t *testing.T) {
+	logInfo(nil, "noop")
+	logWarn(nil, "noop")
+
+	logger, buf := testutil.NewBufferLogger()
+	logInfo(logger, "info")
+	logWarn(logger, "warn")
+	if !strings.Contains(buf.String(), "warn") {
+		t.Fatalf("expected warn entry in buffer")
 	}
 }

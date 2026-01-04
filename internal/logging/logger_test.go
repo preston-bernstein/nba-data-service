@@ -78,3 +78,10 @@ func TestParseLevelFallsBackOnUnknown(t *testing.T) {
 		t.Fatalf("expected info fallback, got %v", got)
 	}
 }
+
+func TestFromContextHandlesNilContext(t *testing.T) {
+	logger := slog.Default()
+	if got := FromContext(nil, logger); got != logger {
+		t.Fatalf("expected fallback logger for nil context")
+	}
+}

@@ -1,9 +1,10 @@
 package testutil
 
 import (
+	"github.com/preston-bernstein/nba-data-service/internal/app/games"
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
-	"github.com/preston-bernstein/nba-data-service/internal/domain/players"
 	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
+	"github.com/preston-bernstein/nba-data-service/internal/store"
 )
 
 // SampleGame returns a minimal game fixture with the provided id.
@@ -40,19 +41,11 @@ func SampleTeam(id string) teams.Team {
 	}
 }
 
-// SamplePlayer returns a minimal player fixture with a team.
-func SamplePlayer(id string) players.Player {
-	return players.Player{
-		ID:        id,
-		FirstName: "First" + id,
-		LastName:  "Last" + id,
-		Position:  "G",
-		Team:      SampleTeam("team-" + id),
-		Meta: players.PlayerMeta{
-			UpstreamPlayerID: 1,
-			College:          "College",
-			Country:          "Country",
-			JerseyNumber:     "1",
-		},
+// NewServiceWithGames builds a games service backed by an in-memory store preloaded with games.
+func NewServiceWithGames(g []domaingames.Game) *games.Service {
+	ms := store.NewMemoryStore()
+	if len(g) > 0 {
+		ms.SetGames(g)
 	}
+	return games.NewService(ms)
 }

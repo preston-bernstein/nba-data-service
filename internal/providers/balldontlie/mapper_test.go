@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/preston-bernstein/nba-data-service/internal/domain/games"
-	"github.com/preston-bernstein/nba-data-service/internal/domain/players"
 	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 )
 
@@ -93,49 +92,5 @@ func TestMapTeamCoversFields(t *testing.T) {
 	}
 	if team != expected {
 		t.Fatalf("unexpected team %+v", team)
-	}
-}
-
-func TestMapPlayerCoversFields(t *testing.T) {
-	raw := playerResponse{
-		ID:           12,
-		FirstName:    "Jane",
-		LastName:     "Doe",
-		Position:     "G",
-		HeightFeet:   6,
-		HeightInches: 1,
-		WeightPounds: 190,
-		Team: teamResponse{
-			ID:           9,
-			Abbreviation: "ABC",
-			City:         "City",
-			Conference:   "East",
-			Division:     "Atlantic",
-			FullName:     "ABC City",
-			Name:         "ABC",
-		},
-		College:      "College",
-		Country:      "USA",
-		JerseyNumber: "7",
-	}
-
-	player := mapPlayer(raw)
-	if player.ID != "player-12" || player.FirstName != "Jane" || player.LastName != "Doe" || player.Position != "G" {
-		t.Fatalf("unexpected base fields %+v", player)
-	}
-	if player.HeightFeet != 6 || player.HeightInches != 1 || player.WeightPounds != 190 {
-		t.Fatalf("unexpected measurements %+v", player)
-	}
-	if player.Team.ID != "team-9" || player.Team.FullName != "ABC City" {
-		t.Fatalf("unexpected team mapping %+v", player.Team)
-	}
-	expectedMeta := players.PlayerMeta{
-		UpstreamPlayerID: 12,
-		College:          "College",
-		Country:          "USA",
-		JerseyNumber:     "7",
-	}
-	if player.Meta != expectedMeta {
-		t.Fatalf("unexpected meta %+v", player.Meta)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/preston-bernstein/nba-data-service/internal/http/middleware"
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
@@ -42,12 +41,4 @@ func requestID(r *http.Request) string {
 		return id
 	}
 	return r.Header.Get("X-Request-ID")
-}
-
-func isActiveOnly(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	q := r.URL.Query().Get("activeOnly")
-	return q == "true" || q == "1" || strings.EqualFold(q, "yes")
 }

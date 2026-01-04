@@ -14,6 +14,10 @@ import (
 const appVersion = "dev"
 
 func main() {
+	if os.Getenv("SKIP_SERVER_RUN") == "1" {
+		return
+	}
+
 	cfg := config.Load()
 	logger := logging.NewLogger(logging.Config{
 		Level:   os.Getenv("LOG_LEVEL"),

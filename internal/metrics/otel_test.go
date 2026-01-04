@@ -232,6 +232,16 @@ func TestPrometheusComponentsErrorPath(t *testing.T) {
 	}
 }
 
+func TestPrometheusComponentsSuccess(t *testing.T) {
+	reader, handler, err := prometheusComponents()
+	if err != nil {
+		t.Fatalf("expected prom components success, got %v", err)
+	}
+	if reader == nil || handler == nil {
+		t.Fatalf("expected reader and handler")
+	}
+}
+
 func TestSetupReturnsErrorWhenFactoriesFail(t *testing.T) {
 	origProm := promReaderFactory
 	origOTLP := otlpReaderFactory

@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -146,6 +148,71 @@ func TestLaunchServerInvokesOnError(t *testing.T) {
 		t.Fatal("expected onError to be called")
 	}
 }
+
+func TestLaunchServerHandlesUnexpectedError(t *testing.T) {
+	stub := &testutil.StubHTTPServer{ListenErr: errors.New("unexpected")}
+	called := make(chan error, 1)
+	launchServer("http", stub, nil, func(err error) {
+		called <- err
+	})
+	select {
+	case err := <-called:
+		if err == nil || err.Error() != "unexpected" {
+			t.Fatalf("expected unexpected error passthrough, got %v", err)
+		}
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("expected onError to be called")
+	}
+}
+
+func TestLaunchServerSuccessDoesNotCallOnError(t *testing.T) {
+	stub := &testutil.StubHTTPServer{}
+	called := make(chan error, 1)
+	launchServer("http", stub, nil, func(err error) {
+		called <- err
+	})
+	time.Sleep(10 * time.Millisecond)
+	select {
+	case err := <-called:
+		t.Fatalf("did not expect onError, got %v", err)
+	default:
+	}
+}
+
+func TestLaunchServerLogsStartAndWarnsOnError(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	stub := &testutil.StubHTTPServer{AddrVal: ":1", ListenErr: errors.New("fail")}
+	called := make(chan error, 1)
+	launchServer("http", stub, logger, func(err error) { called <- err })
+	select {
+	case <-called:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("expected onError to be called")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "starting http server") || !strings.Contains(out, "server failed") {
+		t.Fatalf("expected log entries for start and failure, got %s", out)
+	}
+}
+
+func TestLaunchServerIgnoresErrServerClosed(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	stub := &testutil.CloseableHTTPServer{}
+	called := make(chan struct{}, 1)
+	launchServer("http", stub, logger, func(err error) { called <- struct{}{} })
+	time.Sleep(20 * time.Millisecond)
+	select {
+	case <-called:
+		t.Fatalf("did not expect onError for ErrServerClosed")
+	default:
+	}
+	if !strings.Contains(buf.String(), "starting http server") {
+		t.Fatalf("expected start log, got %s", buf.String())
+	}
+}
+
 func TestStartMetricsSkipsWhenNil(t *testing.T) {
 	s := &Server{}
 	s.startMetrics() // should no-op without panic
@@ -160,6 +227,21 @@ func TestStartMetricsUsesServer(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	if stub.ListenCalls == 0 {
 		t.Fatalf("expected metrics server to start")
+	}
+}
+
+func TestStartMetricsLogsWhenLoggerPresent(t *testing.T) {
+	stub := &testutil.StubHTTPServer{AddrVal: "addr", ListenErr: http.ErrServerClosed}
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	s := &Server{
+		logger:        logger,
+		metricsServer: stub,
+	}
+	s.startMetrics()
+	time.Sleep(10 * time.Millisecond)
+	if !strings.Contains(buf.String(), "metrics server starting") {
+		t.Fatalf("expected metrics start log, got %s", buf.String())
 	}
 }
 
@@ -418,6 +500,73 @@ func TestBuildMetricsUsesFallbackOnSetupError(t *testing.T) {
 	}
 }
 
+func TestBuildMetricsSuccessPathSetsServerAndShutdown(t *testing.T) {
+	orig := metricsSetup
+	defer func() { metricsSetup = orig }()
+	metricsSetup = func(ctx context.Context, cfg metrics.TelemetryConfig) (*metrics.Recorder, http.Handler, func(context.Context) error, error) {
+		rec := metrics.NewRecorder()
+		return rec, http.NewServeMux(), func(context.Context) error { return nil }, nil
+	}
+
+	rec, srv, stop := buildMetrics(config.Config{
+		Metrics: config.MetricsConfig{Enabled: true, Port: "9999"},
+	}, nil, nil)
+
+	if rec == nil || srv == nil || stop == nil {
+		t.Fatalf("expected recorder, server, and shutdown to be set on success")
+	}
+}
+
+func TestNewServerWithMetricsHandlesSetupFailure(t *testing.T) {
+	origSetup := metricsSetup
+	defer func() { metricsSetup = origSetup }()
+
+	metricsSetup = func(ctx context.Context, cfg metrics.TelemetryConfig) (*metrics.Recorder, http.Handler, func(context.Context) error, error) {
+		return nil, nil, nil, errors.New("fail")
+	}
+
+	cfg := config.Config{
+		Metrics:  config.MetricsConfig{Enabled: true},
+		Provider: "fixture",
+	}
+
+	srv := newServerWithMetrics(cfg, nil, providers.NewRetryingProvider(nil, nil, nil, "", 0, 0), nil)
+	if srv.metrics == nil {
+		t.Fatalf("expected fallback metrics recorder even on setup failure")
+	}
+}
+
+func TestNewServerWithMetricsDisabledSkipsSetup(t *testing.T) {
+	cfg := config.Config{
+		Metrics:  config.MetricsConfig{Enabled: false},
+		Provider: "fixture",
+	}
+
+	srv := newServerWithMetrics(cfg, nil, providers.NewRetryingProvider(nil, nil, nil, "", 0, 0), nil)
+	if srv.metrics == nil {
+		t.Fatalf("expected recorder to be set even when metrics disabled")
+	}
+}
+
+func TestNewServerWithMetricsUsesInjectedRecorder(t *testing.T) {
+	rec, shutdown := testutil.NewRecorderWithShutdown()
+	cfg := config.Config{
+		Metrics:  config.MetricsConfig{Enabled: true},
+		Provider: "fixture",
+	}
+
+	srv := newServerWithMetrics(cfg, nil, providers.NewRetryingProvider(nil, nil, nil, "", 0, 0), rec)
+	if srv.metrics != rec {
+		t.Fatalf("expected injected recorder to be used")
+	}
+	if srv.metricsStop != nil {
+		if err := srv.metricsStop(context.Background()); err != nil {
+			t.Fatalf("expected injected shutdown to succeed, got %v", err)
+		}
+	}
+	_ = shutdown
+}
+
 func TestServerStartHandlesListenErrorAndStops(t *testing.T) {
 	svc := testutil.NewServiceWithGames(nil)
 	plr := &testutil.StubPoller{}
@@ -442,6 +591,27 @@ func TestServerStartHandlesListenErrorAndStops(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestStartServerLogsAndStopsOnError(t *testing.T) {
+	svc := testutil.NewServiceWithGames(nil)
+	plr := &testutil.StubPoller{}
+	httpSrv := &testutil.StubHTTPServer{ListenErr: errors.New("boom"), AddrVal: ":0"}
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	srv := newServerWithDeps(config.Config{}, logger, svc, httpSrv, plr)
+	stopCalled := make(chan struct{}, 1)
+	srv.startServer(func() { stopCalled <- struct{}{} })
+
+	select {
+	case <-stopCalled:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected stop called on error")
+	}
+	if !strings.Contains(buf.String(), "http server starting") {
+		t.Fatalf("expected start log, got %s", buf.String())
+	}
 }
 
 func TestRunCancelsAndStopsComponents(t *testing.T) {

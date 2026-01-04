@@ -2,14 +2,12 @@ package middleware
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
+	"github.com/preston-bernstein/nba-data-service/internal/http/requestutil"
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 )
@@ -22,13 +20,10 @@ func LoggingMiddleware(baseLogger *slog.Logger, recorder *metrics.Recorder, next
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		reqID := sanitizeRequestID(r.Header.Get("X-Request-ID"))
+		reqID := requestutil.SanitizeRequestID(r.Header.Get("X-Request-ID"))
 		w.Header().Set("X-Request-ID", reqID)
 
-		clientIP := r.RemoteAddr
-		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			clientIP = forwarded
-		}
+		clientIP := requestutil.ClientIP(r)
 
 		logger := baseLogger.With(
 			slog.String("request_id", reqID),
@@ -67,8 +62,6 @@ type responseWriter struct {
 	status int
 }
 
-var requestIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
-
 // RequestIDFromContext extracts the request ID stored by the logging middleware.
 func RequestIDFromContext(ctx context.Context) string {
 	if ctx == nil {
@@ -85,25 +78,6 @@ func withRequestID(ctx context.Context, id string) context.Context {
 }
 
 type requestIDKey struct{}
-
-func generateRequestID() string {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fallbackRequestID()
-	}
-	return hex.EncodeToString(b[:])
-}
-
-func fallbackRequestID() string {
-	return hex.EncodeToString([]byte(time.Now().Format("20060102150405.000000000")))
-}
-
-func sanitizeRequestID(incoming string) string {
-	if incoming != "" && requestIDPattern.MatchString(incoming) {
-		return incoming
-	}
-	return generateRequestID()
-}
 
 func normalizePath(path string) string {
 	if path == "" {
