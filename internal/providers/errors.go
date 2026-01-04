@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// ErrProviderUnavailable is returned when a provider is not configured or reachable.
+var ErrProviderUnavailable = errors.New("provider unavailable")
+
 // RateLimitError captures rate limit responses from upstream providers.
 type RateLimitError struct {
 	Provider   string

@@ -3,28 +3,28 @@ package store
 import (
 	"sync"
 
-	"nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 )
 
 // MemoryStore keeps a thread-safe snapshot of games in memory.
 type MemoryStore struct {
 	mu    sync.RWMutex
-	games map[string]domain.Game
+	games map[string]domaingames.Game
 }
 
 // NewMemoryStore constructs an empty MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		games: make(map[string]domain.Game),
+		games: make(map[string]domaingames.Game),
 	}
 }
 
 // ListGames returns a copy of the current games slice.
-func (s *MemoryStore) ListGames() []domain.Game {
+func (s *MemoryStore) ListGames() []domaingames.Game {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]domain.Game, 0, len(s.games))
+	result := make([]domaingames.Game, 0, len(s.games))
 	for _, g := range s.games {
 		result = append(result, g)
 	}
@@ -32,7 +32,7 @@ func (s *MemoryStore) ListGames() []domain.Game {
 }
 
 // GetGame retrieves a game by ID.
-func (s *MemoryStore) GetGame(id string) (domain.Game, bool) {
+func (s *MemoryStore) GetGame(id string) (domaingames.Game, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -41,11 +41,11 @@ func (s *MemoryStore) GetGame(id string) (domain.Game, bool) {
 }
 
 // SetGames replaces the existing games with a new snapshot.
-func (s *MemoryStore) SetGames(games []domain.Game) {
+func (s *MemoryStore) SetGames(games []domaingames.Game) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.games = make(map[string]domain.Game, len(games))
+	s.games = make(map[string]domaingames.Game, len(games))
 	for _, g := range games {
 		s.games[g.ID] = g
 	}

@@ -6,14 +6,18 @@ import (
 	"os/signal"
 	"syscall"
 
-	"nba-data-service/internal/config"
-	"nba-data-service/internal/logging"
-	"nba-data-service/internal/server"
+	"github.com/preston-bernstein/nba-data-service/internal/config"
+	"github.com/preston-bernstein/nba-data-service/internal/logging"
+	"github.com/preston-bernstein/nba-data-service/internal/server"
 )
 
 const appVersion = "dev"
 
 func main() {
+	if os.Getenv("SKIP_SERVER_RUN") == "1" {
+		return
+	}
+
 	cfg := config.Load()
 	logger := logging.NewLogger(logging.Config{
 		Level:   os.Getenv("LOG_LEVEL"),

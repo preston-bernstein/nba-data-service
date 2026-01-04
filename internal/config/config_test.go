@@ -18,6 +18,11 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv(envOtelEndpoint, "")
 	t.Setenv(envOtelService, "")
 	t.Setenv(envOtelInsecure, "")
+	t.Setenv(envSnapshotSync, "")
+	t.Setenv(envSnapshotDays, "")
+	t.Setenv(envSnapshotFutureDays, "")
+	t.Setenv(envSnapshotRate, "")
+	t.Setenv(envSnapshotHour, "")
 
 	cfg := Load()
 
@@ -57,6 +62,25 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.Metrics.OtlpInsecure {
 		t.Fatalf("expected otlp insecure default true")
 	}
+	if !cfg.Snapshots.Enabled {
+		t.Fatalf("expected snapshot sync enabled by default")
+	}
+	if cfg.Snapshots.Days != defaultSnapshotDays {
+		t.Fatalf("expected default snapshot days %d, got %d", defaultSnapshotDays, cfg.Snapshots.Days)
+	}
+	if cfg.Snapshots.FutureDays != defaultSnapshotFutureDays {
+		t.Fatalf("expected default snapshot future days %d, got %d", defaultSnapshotFutureDays, cfg.Snapshots.FutureDays)
+	}
+	if cfg.Snapshots.Interval != defaultSnapshotInterval {
+		t.Fatalf("expected default snapshot interval %s, got %s", defaultSnapshotInterval, cfg.Snapshots.Interval)
+	}
+	if cfg.Snapshots.DailyHourUTC != defaultSnapshotDailyHour {
+		t.Fatalf("expected default snapshot daily hour %d, got %d", defaultSnapshotDailyHour, cfg.Snapshots.DailyHourUTC)
+	}
+	expectedRetention := defaultSnapshotDays + 1
+	if cfg.Snapshots.RetentionDays != expectedRetention {
+		t.Fatalf("expected default retention days %d, got %d", expectedRetention, cfg.Snapshots.RetentionDays)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -72,6 +96,11 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv(envOtelEndpoint, "http://otel-collector:4318")
 	t.Setenv(envOtelService, "custom-service")
 	t.Setenv(envOtelInsecure, "false")
+	t.Setenv(envSnapshotSync, "false")
+	t.Setenv(envSnapshotDays, "3")
+	t.Setenv(envSnapshotFutureDays, "4")
+	t.Setenv(envSnapshotRate, "1m")
+	t.Setenv(envSnapshotHour, "5")
 
 	cfg := Load()
 
@@ -110,6 +139,24 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.Metrics.OtlpInsecure {
 		t.Fatalf("expected otlp insecure false override")
+	}
+	if cfg.Snapshots.Enabled {
+		t.Fatalf("expected snapshot sync disabled via env override")
+	}
+	if cfg.Snapshots.Days != 3 {
+		t.Fatalf("expected snapshot days override 3, got %d", cfg.Snapshots.Days)
+	}
+	if cfg.Snapshots.FutureDays != 4 {
+		t.Fatalf("expected snapshot future days override 4, got %d", cfg.Snapshots.FutureDays)
+	}
+	if cfg.Snapshots.Interval != time.Minute {
+		t.Fatalf("expected snapshot interval 1m, got %s", cfg.Snapshots.Interval)
+	}
+	if cfg.Snapshots.DailyHourUTC != 5 {
+		t.Fatalf("expected snapshot daily hour 5, got %d", cfg.Snapshots.DailyHourUTC)
+	}
+	if cfg.Snapshots.RetentionDays != 4 {
+		t.Fatalf("expected retention days 4, got %d", cfg.Snapshots.RetentionDays)
 	}
 }
 

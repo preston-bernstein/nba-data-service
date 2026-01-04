@@ -3,13 +3,13 @@ package store
 import (
 	"testing"
 
-	"nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 )
 
 func TestMemoryStoreSetAndGet(t *testing.T) {
 	s := NewMemoryStore()
 
-	games := []domain.Game{
+	games := []domaingames.Game{
 		{ID: "1", Provider: "test"},
 		{ID: "2", Provider: "test"},
 	}
@@ -38,9 +38,9 @@ func TestMemoryStoreGetNotFound(t *testing.T) {
 
 func TestMemoryStoreSetReplacesSnapshot(t *testing.T) {
 	s := NewMemoryStore()
-	s.SetGames([]domain.Game{{ID: "old"}})
+	s.SetGames([]domaingames.Game{{ID: "old"}})
 
-	s.SetGames([]domain.Game{{ID: "new"}})
+	s.SetGames([]domaingames.Game{{ID: "new"}})
 
 	if _, ok := s.GetGame("old"); ok {
 		t.Fatalf("expected old game to be removed after replace")
@@ -52,7 +52,7 @@ func TestMemoryStoreSetReplacesSnapshot(t *testing.T) {
 
 func TestMemoryStoreListReturnsCopy(t *testing.T) {
 	s := NewMemoryStore()
-	s.SetGames([]domain.Game{{ID: "copy", Provider: "original"}})
+	s.SetGames([]domaingames.Game{{ID: "copy", Provider: "original"}})
 
 	list := s.ListGames()
 	if len(list) != 1 {

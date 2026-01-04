@@ -198,9 +198,65 @@ components:
           type: string
         name:
           type: string
-        externalId:
+        fullName:
+          type: string
+        abbreviation:
+          type: string
+        city:
+          type: string
+        conference:
+          type: string
+        division:
+          type: string
+      required: [id, name]
+    Player:
+      type: object
+      properties:
+        id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        position:
+          type: string
+        heightFeet:
           type: integer
-      required: [id, name, externalId]
+        heightInches:
+          type: integer
+        weightPounds:
+          type: integer
+        height:
+          type: string
+        weight:
+          type: string
+        team:
+          $ref: "#/components/schemas/Team"
+        meta:
+          $ref: "#/components/schemas/PlayerMeta"
+      required: [id, firstName, lastName, team, meta]
+    PlayerMeta:
+      type: object
+      properties:
+        upstreamPlayerId:
+          type: integer
+        college:
+          type: string
+        country:
+          type: string
+        jerseyNumber:
+          type: string
+        height:
+          type: string
+        weight:
+          type: string
+        draftYear:
+          type: integer
+        draftRound:
+          type: integer
+        draftNumber:
+          type: integer
+      required: [upstreamPlayerId]
     Score:
       type: object
       properties:
@@ -216,6 +272,12 @@ components:
           type: string
         upstreamGameId:
           type: integer
+        period:
+          type: integer
+        postseason:
+          type: boolean
+        time:
+          type: string
       required: [season, upstreamGameId]
     ErrorResponse:
       type: object

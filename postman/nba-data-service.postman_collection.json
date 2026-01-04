@@ -99,6 +99,90 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "Balldontlie (direct)",
+      "item": [
+        {
+          "name": "BDL Games by Date",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bdlApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{bdlBaseUrl}}/games?dates[]={{date}}&per_page=100&page=1",
+              "host": [
+                "{{bdlBaseUrl}}"
+              ],
+              "path": [
+                "games"
+              ],
+              "query": [
+                {
+                  "key": "dates[]",
+                  "value": "{{date}}",
+                  "description": "YYYY-MM-DD date"
+                },
+                {
+                  "key": "per_page",
+                  "value": "100",
+                  "description": "Max page size"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Direct balldontlie calls with auth header. Set bdlApiKey/bdlBaseUrl variables."
+    },
+    {
+      "name": "Admin Refresh Snapshot",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/snapshots/refresh?date={{date}}&tz={{tz}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "snapshots",
+            "refresh"
+          ],
+          "query": [
+            {
+              "key": "date",
+              "value": "{{date}}",
+              "description": "YYYY-MM-DD; defaults to today if omitted"
+            },
+            {
+              "key": "tz",
+              "value": "{{tz}}",
+              "description": "Optional IANA timezone for the date resolution"
+            }
+          ]
+        },
+        "description": "Refresh a games snapshot for the given date using the configured provider. Protected by ADMIN_TOKEN."
+      },
+      "response": []
     }
   ],
   "event": [],
@@ -114,6 +198,30 @@
     {
       "key": "id",
       "value": "fixture-1"
+    },
+    {
+      "key": "teamId",
+      "value": "bos"
+    },
+    {
+      "key": "playerId",
+      "value": "player-1"
+    },
+    {
+      "key": "tz",
+      "value": "America/New_York"
+    },
+    {
+      "key": "adminToken",
+      "value": "change-me"
+    },
+    {
+      "key": "bdlBaseUrl",
+      "value": "https://api.balldontlie.io/v1"
+    },
+    {
+      "key": "bdlApiKey",
+      "value": "set-your-balldontlie-api-key"
     }
   ]
 }

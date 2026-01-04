@@ -1,13 +1,15 @@
-package http
+package middleware
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"nba-data-service/internal/logging"
-	"nba-data-service/internal/metrics"
+	"github.com/preston-bernstein/nba-data-service/internal/http/requestutil"
+	"github.com/preston-bernstein/nba-data-service/internal/logging"
+	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 )
 
 // LoggingMiddleware wraps the handler with request logging, request ID support, and metrics.
@@ -18,13 +20,10 @@ func LoggingMiddleware(baseLogger *slog.Logger, recorder *metrics.Recorder, next
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		reqID := sanitizeRequestID(r.Header.Get("X-Request-ID"))
+		reqID := requestutil.SanitizeRequestID(r.Header.Get("X-Request-ID"))
 		w.Header().Set("X-Request-ID", reqID)
 
-		clientIP := r.RemoteAddr
-		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			clientIP = forwarded
-		}
+		clientIP := requestutil.ClientIP(r)
 
 		logger := baseLogger.With(
 			slog.String("request_id", reqID),
@@ -47,8 +46,8 @@ func LoggingMiddleware(baseLogger *slog.Logger, recorder *metrics.Recorder, next
 		}
 
 		logger.Info("request complete",
-			slog.Int("status", ww.status),
-			slog.Int64("duration_ms", duration.Milliseconds()),
+			slog.Int(logging.FieldStatusCode, ww.status),
+			slog.Int64(logging.FieldDurationMS, duration.Milliseconds()),
 		)
 	})
 }
@@ -62,6 +61,23 @@ type responseWriter struct {
 	http.ResponseWriter
 	status int
 }
+
+// RequestIDFromContext extracts the request ID stored by the logging middleware.
+func RequestIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if val, ok := ctx.Value(requestIDKey{}).(string); ok {
+		return val
+	}
+	return ""
+}
+
+func withRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, id)
+}
+
+type requestIDKey struct{}
 
 func normalizePath(path string) string {
 	if path == "" {

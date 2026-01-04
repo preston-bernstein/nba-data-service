@@ -7,6 +7,7 @@ type Config struct {
 	Provider     string
 	Balldontlie  BalldontlieConfig
 	Metrics      MetricsConfig
+	Snapshots    SnapshotSyncConfig
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -17,5 +18,6 @@ func Load() Config {
 		Provider:     envOrDefault(envProvider, defaultProvider),
 		Balldontlie:  loadBalldontlie(),
 		Metrics:      loadMetrics(),
+		Snapshots:    loadSnapshotSync(),
 	}
 }

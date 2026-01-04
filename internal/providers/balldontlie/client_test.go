@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/providers"
 )
 
 func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
@@ -30,8 +30,11 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 					"id": 10,
 					"date": "2024-01-02T15:00:00Z",
 					"status": "Final",
-					"home_team": { "id": 1, "full_name": "Home Team" },
-					"visitor_team": { "id": 2, "full_name": "Away Team" },
+					"time": "Final",
+					"period": 4,
+					"postseason": false,
+					"home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" },
+					"visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" },
 					"home_team_score": 110,
 					"visitor_team_score": 102,
 					"season": 2023
@@ -45,8 +48,11 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 						"id": 10,
 						"date": "2024-01-02T15:00:00Z",
 						"status": "Final",
-						"home_team": { "id": 1, "full_name": "Home Team" },
-						"visitor_team": { "id": 2, "full_name": "Away Team" },
+						"time": "Final",
+						"period": 4,
+						"postseason": false,
+						"home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" },
+						"visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" },
 						"home_team_score": 110,
 						"visitor_team_score": 102,
 						"season": 2023
@@ -63,8 +69,11 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 						"id": 11,
 						"date": "2024-01-03T15:00:00Z",
 						"status": "Final",
-						"home_team": { "id": 3, "full_name": "Another Team" },
-						"visitor_team": { "id": 4, "full_name": "Away Team 2" },
+						"time": "Final",
+						"period": 4,
+						"postseason": false,
+						"home_team": { "id": 3, "full_name": "Another Team", "abbreviation": "ANT", "city": "Another City", "conference": "East", "division": "Central", "name": "Another" },
+						"visitor_team": { "id": 4, "full_name": "Away Team 2", "abbreviation": "AW2", "city": "Away City 2", "conference": "West", "division": "Northwest", "name": "Away2" },
 						"home_team_score": 120,
 						"visitor_team_score": 115,
 						"season": 2023
@@ -131,6 +140,15 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 	}
 	if game.Meta.UpstreamGameID != 10 || game.Meta.Season != "2023" {
 		t.Fatalf("unexpected meta %+v", game.Meta)
+	}
+	if game.Meta.Period != 4 || game.Meta.Postseason {
+		t.Fatalf("unexpected meta extras %+v", game.Meta)
+	}
+	if game.Meta.Time != "Final" {
+		t.Fatalf("unexpected meta time %s", game.Meta.Time)
+	}
+	if game.HomeTeam.Abbreviation != "HTM" || game.HomeTeam.City != "Home City" || game.HomeTeam.Conference != "East" || game.HomeTeam.Division != "Atlantic" {
+		t.Fatalf("unexpected home team extras %+v", game.HomeTeam)
 	}
 }
 
@@ -260,6 +278,38 @@ func TestFetchGamesRespectsMaxPagesCap(t *testing.T) {
 	}
 }
 
+func TestFetchGamesStopsWhenNoDataAndNoMeta(t *testing.T) {
+	calls := 0
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		body := `{
+			"data": []
+		}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewClient(Config{
+		BaseURL:    "http://example.com",
+		HTTPClient: &http.Client{Transport: rt},
+		MaxPages:   5,
+	})
+
+	games, err := client.FetchGames(context.Background(), "", "")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(games) != 0 {
+		t.Fatalf("expected no games, got %d", len(games))
+	}
+	if calls != 1 {
+		t.Fatalf("expected single call when no data, got %d", calls)
+	}
+}
+
 func TestNewClientSetsDefaultHTTPClient(t *testing.T) {
 	c := NewClient(Config{})
 	httpClient, ok := c.httpClient.(*http.Client)
@@ -300,6 +350,11 @@ func TestParseRetryAfter(t *testing.T) {
 		{
 			name:     "empty",
 			raw:      "",
+			expected: 0,
+		},
+		{
+			name:     "invalid_string",
+			raw:      "not-a-number",
 			expected: 0,
 		},
 	}
@@ -386,5 +441,35 @@ func TestResolveDatePrefersParam(t *testing.T) {
 	got := c.resolveDate("2024-02-01", time.UTC)
 	if got != "2024-02-01" {
 		t.Fatalf("expected provided date, got %s", got)
+	}
+}
+
+func TestFetchGamesDedupesByID(t *testing.T) {
+	rt := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		_ = req
+		body := `{
+			"data": [
+				{"id": 1, "date": "2024-01-02T15:00:00Z", "status": "Final", "time": "Final", "period": 4, "postseason": false, "home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" }, "visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" }, "home_team_score": 110, "visitor_team_score": 102, "season": 2023},
+				{"id": 1, "date": "2024-01-02T15:00:00Z", "status": "Final", "time": "Final", "period": 4, "postseason": false, "home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" }, "visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" }, "home_team_score": 120, "visitor_team_score": 112, "season": 2023}
+			],
+			"meta": { "total_pages": 1 }
+		}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	client := NewClient(Config{BaseURL: "http://example.com", HTTPClient: &http.Client{Transport: rt}})
+	games, err := client.FetchGames(context.Background(), "", "")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("expected 1 game after dedupe, got %d", len(games))
+	}
+	if games[0].Score.Home != 120 {
+		t.Fatalf("expected last occurrence to win, got %+v", games[0])
 	}
 }

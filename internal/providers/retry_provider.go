@@ -7,9 +7,9 @@ import (
 	"math/rand"
 	"time"
 
-	"nba-data-service/internal/domain"
-	"nba-data-service/internal/logging"
-	"nba-data-service/internal/metrics"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/logging"
+	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 )
 
 const (
@@ -21,7 +21,7 @@ type backoffFunc func(attempt int) time.Duration
 
 // retryingProvider wraps a GameProvider with retry/backoff behavior.
 type retryingProvider struct {
-	inner        GameProvider
+	gameProvider GameProvider
 	logger       *slog.Logger
 	metrics      *metrics.Recorder
 	providerName string
@@ -58,7 +58,7 @@ func NewRetryingProviderWithRNG(inner GameProvider, logger *slog.Logger, metrics
 	}
 
 	return &retryingProvider{
-		inner:        inner,
+		gameProvider: inner,
 		logger:       logger,
 		metrics:      metricsRecorder,
 		providerName: providerName,
@@ -70,12 +70,12 @@ func NewRetryingProviderWithRNG(inner GameProvider, logger *slog.Logger, metrics
 	}
 }
 
-func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
 	var lastErr error
 
 	for attempt := 1; attempt <= r.maxAttempts; attempt++ {
 		start := time.Now()
-		games, err := r.inner.FetchGames(ctx, date, tz)
+		gm, err := r.gameProvider.FetchGames(ctx, date, tz)
 		r.recordAttempt(time.Since(start), err)
 
 		if err == nil {
@@ -85,7 +85,7 @@ func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz strin
 					"attempt", attempt,
 				)
 			}
-			return games, nil
+			return gm, nil
 		}
 		lastErr = err
 
@@ -184,8 +184,5 @@ func (r *retryingProvider) logRetry(ctx context.Context, attempt int, delay time
 
 func (r *retryingProvider) log(ctx context.Context, level slog.Level, msg string, args ...any) {
 	logger := logging.FromContext(ctx, r.logger)
-	if logger == nil {
-		return
-	}
-	logger.Log(ctx, level, msg, args...)
+	logWithProvider(ctx, logger, level, r.providerName, msg, args...)
 }

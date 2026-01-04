@@ -60,3 +60,28 @@ func TestNewLoggerAddsFields(t *testing.T) {
 		t.Fatalf("expected logger")
 	}
 }
+
+func TestBuildHandlerReturnsJSONAndText(t *testing.T) {
+	if _, ok := buildHandler("json", slog.LevelInfo).(*slog.JSONHandler); !ok {
+		t.Fatalf("expected JSON handler")
+	}
+	if _, ok := buildHandler("text", slog.LevelWarn).(*slog.TextHandler); !ok {
+		t.Fatalf("expected text handler")
+	}
+}
+
+func TestParseLevelFallsBackOnUnknown(t *testing.T) {
+	if got := parseLevel("DEBUG"); got != slog.LevelDebug {
+		t.Fatalf("expected debug for DEBUG")
+	}
+	if got := parseLevel("unknown"); got != slog.LevelInfo {
+		t.Fatalf("expected info fallback, got %v", got)
+	}
+}
+
+func TestFromContextHandlesNilContext(t *testing.T) {
+	logger := slog.Default()
+	if got := FromContext(nil, logger); got != logger {
+		t.Fatalf("expected fallback logger for nil context")
+	}
+}

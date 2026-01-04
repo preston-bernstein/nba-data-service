@@ -3,10 +3,10 @@ package server
 import (
 	"log/slog"
 
-	"nba-data-service/internal/config"
-	"nba-data-service/internal/providers"
-	"nba-data-service/internal/providers/balldontlie"
-	"nba-data-service/internal/providers/fixture"
+	"github.com/preston-bernstein/nba-data-service/internal/config"
+	"github.com/preston-bernstein/nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/providers/balldontlie"
+	"github.com/preston-bernstein/nba-data-service/internal/providers/fixture"
 )
 
 func selectProvider(cfg config.Config, logger *slog.Logger) providers.GameProvider {

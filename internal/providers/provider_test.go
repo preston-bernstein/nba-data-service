@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/games"
 )
 
 type testProvider struct{}
 
-func (t *testProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (t *testProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
 	_ = ctx
 	_ = date
 	_ = tz
