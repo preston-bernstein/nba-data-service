@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 func simpleSnapshot(date string) domain.TodayResponse {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 // Provider returns a static set of games useful for local testing and bootstrapping.

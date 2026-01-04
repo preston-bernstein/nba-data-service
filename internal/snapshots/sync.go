@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"nba-data-service/internal/domain"
-	"nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/providers"
 )
 
 // Syncer backfills and prunes snapshots on a schedule.

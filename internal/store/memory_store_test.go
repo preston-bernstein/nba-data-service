@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 func TestMemoryStoreSetAndGet(t *testing.T) {

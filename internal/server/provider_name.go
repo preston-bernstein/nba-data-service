@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/providers"
 )
 
 // normalizeProviderName returns a lower-cased provider name, deriving from instance when not explicitly configured.

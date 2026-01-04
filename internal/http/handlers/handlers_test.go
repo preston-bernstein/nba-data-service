@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"nba-data-service/internal/app/games"
-	"nba-data-service/internal/domain"
-	"nba-data-service/internal/http/middleware"
-	"nba-data-service/internal/logging"
-	"nba-data-service/internal/poller"
-	"nba-data-service/internal/snapshots"
-	"nba-data-service/internal/store"
-	"nba-data-service/internal/testutil"
+	"github.com/preston-bernstein/nba-data-service/internal/app/games"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/http/middleware"
+	"github.com/preston-bernstein/nba-data-service/internal/logging"
+	"github.com/preston-bernstein/nba-data-service/internal/poller"
+	"github.com/preston-bernstein/nba-data-service/internal/snapshots"
+	"github.com/preston-bernstein/nba-data-service/internal/store"
+	"github.com/preston-bernstein/nba-data-service/internal/testutil"
 )
 
 type stubSnapshots struct {

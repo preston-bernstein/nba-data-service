@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 type fakeProvider struct {

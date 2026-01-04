@@ -3,7 +3,7 @@ package providers
 import (
 	"context"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 // GameProvider defines how upstream game data is fetched and normalized.
