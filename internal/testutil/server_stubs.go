@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"nba-data-service/internal/poller"
+	"github.com/preston-bernstein/nba-data-service/internal/poller"
 )
 
 // StubPoller implements Poller for tests.

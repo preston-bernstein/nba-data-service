@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"time"
 
-	"nba-data-service/internal/config"
-	"nba-data-service/internal/metrics"
-	"nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/config"
+	"github.com/preston-bernstein/nba-data-service/internal/metrics"
+	"github.com/preston-bernstein/nba-data-service/internal/providers"
 )
 
 // providerFactory assembles the provider with shared wrappers (rate limit + retry).

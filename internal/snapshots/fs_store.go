@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
 )
 
 // Store defines how snapshots are loaded.

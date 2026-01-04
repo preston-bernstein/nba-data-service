@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"nba-data-service/internal/poller"
+	"github.com/preston-bernstein/nba-data-service/internal/poller"
 )
 
 // Poller defines the minimal poller behavior needed by the server.

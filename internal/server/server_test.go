@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"nba-data-service/internal/config"
-	"nba-data-service/internal/domain"
-	"nba-data-service/internal/metrics"
-	"nba-data-service/internal/poller"
-	"nba-data-service/internal/providers"
-	"nba-data-service/internal/providers/balldontlie"
-	"nba-data-service/internal/testutil"
+	"github.com/preston-bernstein/nba-data-service/internal/config"
+	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/metrics"
+	"github.com/preston-bernstein/nba-data-service/internal/poller"
+	"github.com/preston-bernstein/nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/providers/balldontlie"
+	"github.com/preston-bernstein/nba-data-service/internal/testutil"
 )
 
 func TestServerServesHealthAndGames(t *testing.T) {

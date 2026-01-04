@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"nba-data-service/internal/http/middleware"
-	"nba-data-service/internal/logging"
+	"github.com/preston-bernstein/nba-data-service/internal/http/middleware"
+	"github.com/preston-bernstein/nba-data-service/internal/logging"
 )
 
 func writeJSON(w http.ResponseWriter, status int, payload any, logger *slog.Logger) {
