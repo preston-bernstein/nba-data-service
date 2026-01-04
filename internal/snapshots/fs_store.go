@@ -13,8 +13,6 @@ import (
 // Store defines how snapshots are loaded.
 type Store interface {
 	LoadGames(date string) (domaingames.TodayResponse, error)
-	LoadTeams(date string) (TeamsSnapshot, error)
-	LoadPlayers(date string) (PlayersSnapshot, error)
 }
 
 // FSStore loads snapshots from the filesystem.
@@ -40,30 +38,6 @@ func (s *FSStore) LoadGames(date string) (domaingames.TodayResponse, error) {
 	return payload, nil
 }
 
-// LoadTeams reads a teams snapshot for the given date (YYYY-MM-DD) from disk.
-func (s *FSStore) LoadTeams(date string) (TeamsSnapshot, error) {
-	var payload TeamsSnapshot
-	if err := s.load(kindTeams, date, &payload); err != nil {
-		return TeamsSnapshot{}, err
-	}
-	if payload.Date == "" {
-		payload.Date = date
-	}
-	return payload, nil
-}
-
-// LoadPlayers reads a players snapshot for the given date (YYYY-MM-DD) from disk.
-func (s *FSStore) LoadPlayers(date string) (PlayersSnapshot, error) {
-	var payload PlayersSnapshot
-	if err := s.load(kindPlayers, date, &payload); err != nil {
-		return PlayersSnapshot{}, err
-	}
-	if payload.Date == "" {
-		payload.Date = date
-	}
-	return payload, nil
-}
-
 func (s *FSStore) load(kind snapshotKind, date string, payload any) error {
 	if s == nil {
 		return errors.New("snapshot store not configured")
@@ -82,4 +56,13 @@ func (s *FSStore) load(kind snapshotKind, date string, payload any) error {
 		return err
 	}
 	return nil
+}
+
+func (s *FSStore) decodeFile(path string, payload any) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return json.NewDecoder(f).Decode(payload)
 }

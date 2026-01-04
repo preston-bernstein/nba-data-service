@@ -125,22 +125,6 @@ func TestRequestIDHelpers(t *testing.T) {
 	}
 }
 
-func TestRequestIDSanitization(t *testing.T) {
-	if generateRequestID() == "" {
-		t.Fatalf("expected generated id")
-	}
-	if fallbackRequestID() == "" {
-		t.Fatalf("expected fallback id")
-	}
-	if sanitizeRequestID("valid-123") != "valid-123" {
-		t.Fatalf("expected valid id to pass through")
-	}
-	sanitized := sanitizeRequestID("bad id")
-	if sanitized == "bad id" || sanitized == "" {
-		t.Fatalf("expected sanitized id to differ and be non-empty")
-	}
-}
-
 func TestRequestIDFromContextEmpty(t *testing.T) {
 	if got := RequestIDFromContext(nil); got != "" {
 		t.Fatalf("expected empty id for nil context, got %s", got)

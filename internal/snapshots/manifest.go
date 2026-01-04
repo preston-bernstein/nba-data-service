@@ -13,27 +13,13 @@ type Manifest struct {
 	GeneratedAt time.Time `json:"generatedAt"`
 	Retention   Retention `json:"retention"`
 	Games       GamesMeta `json:"games"`
-	Teams       TeamsMeta `json:"teams"`
-	Players     PlayersMeta `json:"players"`
 }
 
 type Retention struct {
-	GamesDays   int `json:"gamesDays"`
-	TeamsDays   int `json:"teamsDays"`
-	PlayersDays int `json:"playersDays"`
+	GamesDays int `json:"gamesDays"`
 }
 
 type GamesMeta struct {
-	Dates         []string  `json:"dates"`
-	LastRefreshed time.Time `json:"lastRefreshed"`
-}
-
-type TeamsMeta struct {
-	Dates         []string  `json:"dates"`
-	LastRefreshed time.Time `json:"lastRefreshed"`
-}
-
-type PlayersMeta struct {
 	Dates         []string  `json:"dates"`
 	LastRefreshed time.Time `json:"lastRefreshed"`
 }
@@ -43,19 +29,9 @@ func defaultManifest(retentionDays int) Manifest {
 		Version:     1,
 		GeneratedAt: time.Now().UTC(),
 		Retention: Retention{
-			GamesDays:   retentionDays,
-			TeamsDays:   retentionDays,
-			PlayersDays: retentionDays,
+			GamesDays: retentionDays,
 		},
 		Games: GamesMeta{
-			Dates:         []string{},
-			LastRefreshed: time.Time{},
-		},
-		Teams: TeamsMeta{
-			Dates:         []string{},
-			LastRefreshed: time.Time{},
-		},
-		Players: PlayersMeta{
 			Dates:         []string{},
 			LastRefreshed: time.Time{},
 		},

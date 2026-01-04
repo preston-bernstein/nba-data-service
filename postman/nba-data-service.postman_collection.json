@@ -101,106 +101,50 @@
       "response": []
     },
     {
-      "name": "Teams",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/teams",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "teams"
-          ],
-          "query": [
-            {
-              "key": "activeOnly",
-              "value": "true",
-              "description": "When true, return only the latest active roster view",
-              "type": "text"
+      "name": "Balldontlie (direct)",
+      "item": [
+        {
+          "name": "BDL Games by Date",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bdlApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{bdlBaseUrl}}/games?dates[]={{date}}&per_page=100&page=1",
+              "host": [
+                "{{bdlBaseUrl}}"
+              ],
+              "path": [
+                "games"
+              ],
+              "query": [
+                {
+                  "key": "dates[]",
+                  "value": "{{date}}",
+                  "description": "YYYY-MM-DD date"
+                },
+                {
+                  "key": "per_page",
+                  "value": "100",
+                  "description": "Max page size"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                }
+              ]
             }
-          ]
+          },
+          "response": []
         }
-      },
-      "response": []
-    },
-    {
-      "name": "Team By ID",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/teams/{{teamId}}",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "teams",
-            "{{teamId}}"
-          ],
-          "query": [
-            {
-              "key": "activeOnly",
-              "value": "true",
-              "description": "When true, return only the latest active roster view",
-              "type": "text"
-            }
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "Players",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/players",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "players"
-          ],
-          "query": [
-            {
-              "key": "activeOnly",
-              "value": "true",
-              "description": "When true, return only the latest active roster view",
-              "type": "text"
-            }
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "Player By ID",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/players/{{playerId}}",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "players",
-            "{{playerId}}"
-          ],
-          "query": [
-            {
-              "key": "activeOnly",
-              "value": "true",
-              "description": "When true, return only the latest active roster view",
-              "type": "text"
-            }
-          ]
-        }
-      },
-      "response": []
+      ],
+      "description": "Direct balldontlie calls with auth header. Set bdlApiKey/bdlBaseUrl variables."
     },
     {
       "name": "Admin Refresh Snapshot",
@@ -270,6 +214,14 @@
     {
       "key": "adminToken",
       "value": "change-me"
+    },
+    {
+      "key": "bdlBaseUrl",
+      "value": "https://api.balldontlie.io/v1"
+    },
+    {
+      "key": "bdlApiKey",
+      "value": "set-your-balldontlie-api-key"
     }
   ]
 }

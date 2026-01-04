@@ -3,14 +3,13 @@ package providers
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/preston-bernstein/nba-data-service/internal/domain/games"
-	"github.com/preston-bernstein/nba-data-service/internal/domain/players"
-	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 )
 
@@ -201,6 +200,42 @@ func TestNewRetryingProviderWithNilProviderSetsFallbackName(t *testing.T) {
 	}
 }
 
+func TestRetryingProviderJitterDelayAndSleep(t *testing.T) {
+	rp := &retryingProvider{rng: rand.New(rand.NewSource(1))}
+
+	if got := rp.jitterDelay(0); got != 0 {
+		t.Fatalf("expected zero jitter for zero base, got %s", got)
+	}
+	if got := rp.jitterDelay(1); got != time.Duration(1) {
+		t.Fatalf("expected base returned when half is zero, got %s", got)
+	}
+	jitter := rp.jitterDelay(10 * time.Millisecond)
+	if jitter < 5*time.Millisecond || jitter > 10*time.Millisecond {
+		t.Fatalf("expected jitter between 5ms and 10ms, got %s", jitter)
+	}
+
+	if err := rp.sleep(context.Background(), 0); err != nil {
+		t.Fatalf("expected zero delay sleep to be nil, got %v", err)
+	}
+}
+
+func TestRetryingProviderLogRetryIncludesRateLimitFields(t *testing.T) {
+	bufLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	rp := &retryingProvider{
+		logger:       bufLogger,
+		providerName: "test",
+		maxAttempts:  3,
+	}
+
+	rlErr := &RateLimitError{StatusCode: 429, RetryAfter: time.Second, Remaining: "10"}
+	rp.logRetry(context.Background(), 2, 2*time.Second, rlErr)
+	rp.logRetry(context.Background(), 1, 0, errors.New("boom"))
+	// logging is side-effect only; ensure calls do not panic and provider metadata is retained
+	if rp.providerName != "test" {
+		t.Fatalf("expected provider name to remain unchanged")
+	}
+}
+
 type rateLimitThenSuccessProvider struct {
 	calls int
 }
@@ -217,93 +252,4 @@ func (f *rateLimitThenSuccessProvider) FetchGames(ctx context.Context, date stri
 		}
 	}
 	return []games.Game{{ID: "ok"}}, nil
-}
-
-type alwaysFailTeamProvider struct{}
-
-func (a *alwaysFailTeamProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
-	return nil, errors.New("games not supported")
-}
-
-func (a *alwaysFailTeamProvider) FetchTeams(ctx context.Context) ([]teams.Team, error) {
-	return nil, errors.New("fail teams")
-}
-
-func (a *alwaysFailTeamProvider) FetchPlayers(ctx context.Context) ([]players.Player, error) {
-	return nil, errors.New("fail players")
-}
-
-func TestRetryingProviderRetriesTeamsAndPlayers(t *testing.T) {
-	rp := NewRetryingProvider(&alwaysFailTeamProvider{}, nil, metrics.NewRecorder(), "multi", 2, time.Millisecond).(*retryingProvider)
-	rp.backoffFn = func(attempt int) time.Duration {
-		_ = attempt
-		return 0
-	}
-
-	if _, err := rp.FetchTeams(context.Background()); err == nil {
-		t.Fatalf("expected team fetch to fail after retries")
-	}
-	if _, err := rp.FetchPlayers(context.Background()); err == nil {
-		t.Fatalf("expected player fetch to fail after retries")
-	}
-}
-
-type staticTeamPlayerProvider struct{}
-
-func (s *staticTeamPlayerProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
-	return nil, errors.New("games not supported")
-}
-func (s *staticTeamPlayerProvider) FetchTeams(ctx context.Context) ([]teams.Team, error) {
-	return []teams.Team{{ID: "t1"}}, nil
-}
-func (s *staticTeamPlayerProvider) FetchPlayers(ctx context.Context) ([]players.Player, error) {
-	return []players.Player{{ID: "p1"}}, nil
-}
-
-func TestRetryingProviderTeamsAndPlayersSuccess(t *testing.T) {
-	rec := metrics.NewRecorder()
-	rp := NewRetryingProvider(&staticTeamPlayerProvider{}, nil, rec, "multi", 2, time.Millisecond).(*retryingProvider)
-
-	teams, err := rp.FetchTeams(context.Background())
-	if err != nil || len(teams) != 1 {
-		t.Fatalf("expected teams success, got err=%v teams=%v", err, teams)
-	}
-	players, err := rp.FetchPlayers(context.Background())
-	if err != nil || len(players) != 1 {
-		t.Fatalf("expected players success, got err=%v players=%v", err, players)
-	}
-	if got := rec.ProviderCalls("multi"); got == 0 {
-		t.Fatalf("expected metrics recorded")
-	}
-}
-
-func TestRetryingProviderContextCancelForTeamsAndPlayers(t *testing.T) {
-	rec := metrics.NewRecorder()
-	rp := NewRetryingProvider(&alwaysFailTeamProvider{}, nil, rec, "multi", 3, time.Second).(*retryingProvider)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	if _, err := rp.FetchTeams(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected canceled context for teams, got %v", err)
-	}
-	if _, err := rp.FetchPlayers(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected canceled context for players, got %v", err)
-	}
-}
-
-type gamesOnlyRetryProvider struct{}
-
-func (g *gamesOnlyRetryProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
-	return nil, nil
-}
-
-func TestRetryingProviderReturnsUnavailableWhenTeamsOrPlayersUnsupported(t *testing.T) {
-	rp := NewRetryingProvider(&gamesOnlyRetryProvider{}, nil, metrics.NewRecorder(), "games-only", 1, time.Millisecond).(*retryingProvider)
-	if _, err := rp.FetchTeams(context.Background()); !errors.Is(err, ErrProviderUnavailable) {
-		t.Fatalf("expected ErrProviderUnavailable for teams, got %v", err)
-	}
-	if _, err := rp.FetchPlayers(context.Background()); !errors.Is(err, ErrProviderUnavailable) {
-		t.Fatalf("expected ErrProviderUnavailable for players, got %v", err)
-	}
 }

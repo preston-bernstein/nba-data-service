@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/preston-bernstein/nba-data-service/internal/domain/games"
-	"github.com/preston-bernstein/nba-data-service/internal/domain/players"
 	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 )
 
@@ -60,23 +59,4 @@ func mapStatus(status string) games.GameStatus {
 
 func formatSeason(season int) string {
 	return fmt.Sprintf("%d", season)
-}
-
-func mapPlayer(p playerResponse) players.Player {
-	return players.Player{
-		ID:           fmt.Sprintf("player-%d", p.ID),
-		FirstName:    p.FirstName,
-		LastName:     p.LastName,
-		Position:     strings.TrimSpace(p.Position),
-		HeightFeet:   p.HeightFeet,
-		HeightInches: p.HeightInches,
-		WeightPounds: p.WeightPounds,
-		Team:         mapTeam(p.Team),
-		Meta: players.PlayerMeta{
-			UpstreamPlayerID: p.ID,
-			College:          p.College,
-			Country:          p.Country,
-			JerseyNumber:     p.JerseyNumber,
-		},
-	}
 }
