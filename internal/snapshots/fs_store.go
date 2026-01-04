@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 )
 
 // Store defines how snapshots are loaded.
 type Store interface {
-	LoadGames(date string) (domain.TodayResponse, error)
+	LoadGames(date string) (domaingames.TodayResponse, error)
+	LoadTeams(date string) (TeamsSnapshot, error)
+	LoadPlayers(date string) (PlayersSnapshot, error)
 }
 
 // FSStore loads snapshots from the filesystem.
@@ -27,27 +29,57 @@ func NewFSStore(basePath string) *FSStore {
 
 // LoadGames reads a snapshot for the given date (YYYY-MM-DD) from disk.
 // Files are expected at {basePath}/games/{date}.json with a TodayResponse payload.
-func (s *FSStore) LoadGames(date string) (domain.TodayResponse, error) {
-	if s == nil {
-		return domain.TodayResponse{}, errors.New("snapshot store not configured")
+func (s *FSStore) LoadGames(date string) (domaingames.TodayResponse, error) {
+	var payload domaingames.TodayResponse
+	if err := s.load(kindGames, date, &payload); err != nil {
+		return domaingames.TodayResponse{}, err
 	}
-	if date == "" {
-		return domain.TodayResponse{}, errors.New("snapshot date required")
-	}
-	path := filepath.Join(s.basePath, "games", fmt.Sprintf("%s.json", date))
-	f, err := os.Open(path)
-	if err != nil {
-		return domain.TodayResponse{}, err
-	}
-	defer f.Close()
-
-	var payload domain.TodayResponse
-	if err := json.NewDecoder(f).Decode(&payload); err != nil {
-		return domain.TodayResponse{}, err
-	}
-	// If the snapshot omits date, set it from the filename for safety.
 	if payload.Date == "" {
 		payload.Date = date
 	}
 	return payload, nil
+}
+
+// LoadTeams reads a teams snapshot for the given date (YYYY-MM-DD) from disk.
+func (s *FSStore) LoadTeams(date string) (TeamsSnapshot, error) {
+	var payload TeamsSnapshot
+	if err := s.load(kindTeams, date, &payload); err != nil {
+		return TeamsSnapshot{}, err
+	}
+	if payload.Date == "" {
+		payload.Date = date
+	}
+	return payload, nil
+}
+
+// LoadPlayers reads a players snapshot for the given date (YYYY-MM-DD) from disk.
+func (s *FSStore) LoadPlayers(date string) (PlayersSnapshot, error) {
+	var payload PlayersSnapshot
+	if err := s.load(kindPlayers, date, &payload); err != nil {
+		return PlayersSnapshot{}, err
+	}
+	if payload.Date == "" {
+		payload.Date = date
+	}
+	return payload, nil
+}
+
+func (s *FSStore) load(kind snapshotKind, date string, payload any) error {
+	if s == nil {
+		return errors.New("snapshot store not configured")
+	}
+	if date == "" {
+		return errors.New("snapshot date required")
+	}
+	path := filepath.Join(s.basePath, string(kind), fmt.Sprintf("%s.json", date))
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err := json.NewDecoder(f).Decode(payload); err != nil {
+		return err
+	}
+	return nil
 }

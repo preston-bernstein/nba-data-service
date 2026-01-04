@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/players"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 )
 
@@ -46,7 +49,7 @@ func NewClient(cfg Config) *Client {
 }
 
 // FetchGames retrieves today's games from balldontlie.
-func (c *Client) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (c *Client) FetchGames(ctx context.Context, date string, tz string) ([]domaingames.Game, error) {
 	loc := c.loc
 	if tz != "" {
 		if override := resolveLocation(tz); override != nil {
@@ -54,54 +57,94 @@ func (c *Client) FetchGames(ctx context.Context, date string, tz string) ([]doma
 		}
 	}
 
-	page := 1
-	allGames := make([]domain.Game, 0)
-
-	for {
-		req, err := c.buildRequest(ctx, date, page, loc)
-		if err != nil {
-			return nil, err
-		}
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-			resp.Body.Close()
-			return nil, classifyErrorResponse(resp, body, c.now())
-		}
-
+	buildReq := func(page int) (*http.Request, error) {
+		return c.buildRequest(ctx, date, page, loc)
+	}
+	decode := func(dec *json.Decoder) ([]domaingames.Game, int, error) {
 		var payload gamesResponse
-		if decodeErr := json.NewDecoder(resp.Body).Decode(&payload); decodeErr != nil {
-			resp.Body.Close()
-			return nil, decodeErr
+		if err := dec.Decode(&payload); err != nil {
+			return nil, 0, err
 		}
-		resp.Body.Close()
-
+		mapped := make([]domaingames.Game, 0, len(payload.Data))
 		for _, g := range payload.Data {
-			allGames = append(allGames, mapGame(g))
+			mapped = append(mapped, mapGame(g))
 		}
-
-		totalPages := payload.Meta.TotalPages
-		if totalPages > 0 {
-			if page >= totalPages {
-				break
-			}
-		} else {
-			if len(payload.Data) == 0 || len(payload.Data) < defaultPerPage {
-				break
-			}
-		}
-		if page >= c.maxPages {
-			break
-		}
-		page++
+		return mapped, payload.Meta.TotalPages, nil
 	}
 
-	return allGames, nil
+	games, err := fetchPaged(ctx, c.maxPages, c.now, c.httpClient, buildReq, decode)
+	if err != nil {
+		return nil, err
+	}
+	return dedupe(games, func(g domaingames.Game) string { return g.ID }), nil
+}
+
+// FetchTeams retrieves teams from balldontlie.
+func (c *Client) FetchTeams(ctx context.Context) ([]teams.Team, error) {
+	buildReq := func(page int) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/teams", nil)
+		if err != nil {
+			return nil, err
+		}
+		q := req.URL.Query()
+		q.Set("per_page", strconv.Itoa(defaultPerPage))
+		q.Set("page", strconv.Itoa(page))
+		req.URL.RawQuery = q.Encode()
+		if c.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		}
+		return req, nil
+	}
+	decode := func(dec *json.Decoder) ([]teams.Team, int, error) {
+		var payload teamsResponse
+		if err := dec.Decode(&payload); err != nil {
+			return nil, 0, err
+		}
+		mapped := make([]teams.Team, 0, len(payload.Data))
+		for _, t := range payload.Data {
+			mapped = append(mapped, mapTeam(t))
+		}
+		return mapped, payload.Meta.TotalPages, nil
+	}
+	items, err := fetchPaged(ctx, c.maxPages, c.now, c.httpClient, buildReq, decode)
+	if err != nil {
+		return nil, err
+	}
+	return dedupe(items, func(t teams.Team) string { return t.ID }), nil
+}
+
+// FetchPlayers retrieves players from balldontlie.
+func (c *Client) FetchPlayers(ctx context.Context) ([]players.Player, error) {
+	buildReq := func(page int) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/players", nil)
+		if err != nil {
+			return nil, err
+		}
+		q := req.URL.Query()
+		q.Set("per_page", strconv.Itoa(defaultPerPage))
+		q.Set("page", strconv.Itoa(page))
+		req.URL.RawQuery = q.Encode()
+		if c.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		}
+		return req, nil
+	}
+	decode := func(dec *json.Decoder) ([]players.Player, int, error) {
+		var payload playersResponse
+		if err := dec.Decode(&payload); err != nil {
+			return nil, 0, err
+		}
+		mapped := make([]players.Player, 0, len(payload.Data))
+		for _, pResp := range payload.Data {
+			mapped = append(mapped, mapPlayer(pResp))
+		}
+		return mapped, payload.Meta.TotalPages, nil
+	}
+	items, err := fetchPaged(ctx, c.maxPages, c.now, c.httpClient, buildReq, decode)
+	if err != nil {
+		return nil, err
+	}
+	return dedupe(items, func(p players.Player) string { return p.ID }), nil
 }
 
 func (c *Client) buildRequest(ctx context.Context, date string, page int, loc *time.Location) (*http.Request, error) {
@@ -144,6 +187,75 @@ func classifyErrorResponse(resp *http.Response, body []byte, now time.Time) erro
 		}
 	}
 	return fmt.Errorf(msg)
+}
+
+// fetchPaged centralizes pagination and error handling for list endpoints.
+func fetchPaged[T any](
+	ctx context.Context,
+	maxPages int,
+	now func() time.Time,
+	doer httpDoer,
+	buildReq func(page int) (*http.Request, error),
+	decode func(dec *json.Decoder) ([]T, int, error),
+) ([]T, error) {
+	page := 1
+	var all []T
+
+	for {
+		req, err := buildReq(page)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := doer.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			resp.Body.Close()
+			return nil, classifyErrorResponse(resp, body, now())
+		}
+
+		data, totalPages, err := decode(json.NewDecoder(resp.Body))
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		all = append(all, data...)
+
+		if totalPages > 0 {
+			if page >= totalPages || page >= maxPages {
+				break
+			}
+		} else {
+			if len(data) == 0 || len(data) < defaultPerPage || page >= maxPages {
+				break
+			}
+		}
+		page++
+	}
+
+	return all, nil
+}
+
+func dedupe[T any](items []T, idFn func(T) string) []T {
+	unique := make(map[string]T, len(items))
+	for _, item := range items {
+		unique[idFn(item)] = item
+	}
+	ids := make([]string, 0, len(unique))
+	for id := range unique {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	result := make([]T, 0, len(ids))
+	for _, id := range ids {
+		result = append(result, unique[id])
+	}
+	return result
 }
 
 // parseRetryAfter interprets Retry-After header values as either seconds or HTTP dates.

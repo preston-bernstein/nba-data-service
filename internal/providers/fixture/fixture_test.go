@@ -48,3 +48,31 @@ func TestNewCreatesProvider(t *testing.T) {
 		t.Fatalf("expected date override, got %s", games[0].StartTime)
 	}
 }
+
+func TestFetchTeamsReturnsStaticTeams(t *testing.T) {
+	p := New()
+	teams, err := p.FetchTeams(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(teams) == 0 {
+		t.Fatalf("expected teams returned")
+	}
+	if teams[0].ID == "" || teams[0].FullName == "" {
+		t.Fatalf("expected populated team %+v", teams[0])
+	}
+}
+
+func TestFetchPlayersReturnsStaticPlayers(t *testing.T) {
+	p := New()
+	players, err := p.FetchPlayers(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(players) == 0 {
+		t.Fatalf("expected players returned")
+	}
+	if players[0].ID == "" || players[0].Team.ID == "" {
+		t.Fatalf("expected populated player %+v", players[0])
+	}
+}

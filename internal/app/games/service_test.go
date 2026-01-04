@@ -3,35 +3,35 @@ package games
 import (
 	"testing"
 
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 )
 
 type stubStore struct {
-	listResult []domain.Game
-	getResult  domain.Game
+	listResult []domaingames.Game
+	getResult  domaingames.Game
 	getOK      bool
 
 	setCalls int
-	setValue []domain.Game
+	setValue []domaingames.Game
 }
 
-func (s *stubStore) ListGames() []domain.Game {
+func (s *stubStore) ListGames() []domaingames.Game {
 	return s.listResult
 }
 
-func (s *stubStore) GetGame(id string) (domain.Game, bool) {
+func (s *stubStore) GetGame(id string) (domaingames.Game, bool) {
 	_ = id
 	return s.getResult, s.getOK
 }
 
-func (s *stubStore) SetGames(games []domain.Game) {
+func (s *stubStore) SetGames(games []domaingames.Game) {
 	s.setCalls++
 	s.setValue = games
 }
 
 func TestServiceGames(t *testing.T) {
 	store := &stubStore{
-		listResult: []domain.Game{{ID: "one"}, {ID: "two"}},
+		listResult: []domaingames.Game{{ID: "one"}, {ID: "two"}},
 	}
 	svc := NewService(store)
 
@@ -45,7 +45,7 @@ func TestServiceGames(t *testing.T) {
 }
 
 func TestServiceGameByID(t *testing.T) {
-	want := domain.Game{ID: "abc"}
+	want := domaingames.Game{ID: "abc"}
 	store := &stubStore{
 		getResult: want,
 		getOK:     true,
@@ -65,7 +65,7 @@ func TestServiceReplaceGames(t *testing.T) {
 	store := &stubStore{}
 	svc := NewService(store)
 
-	payload := []domain.Game{{ID: "replace-me"}}
+	payload := []domaingames.Game{{ID: "replace-me"}}
 	svc.ReplaceGames(payload)
 
 	if store.setCalls != 1 {

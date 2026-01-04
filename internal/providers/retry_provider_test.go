@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/players"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 )
 
@@ -17,7 +19,7 @@ type flakeyProvider struct {
 	calls    int
 }
 
-func (f *flakeyProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (f *flakeyProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
 	_ = ctx
 	_ = date
 	_ = tz
@@ -25,7 +27,7 @@ func (f *flakeyProvider) FetchGames(ctx context.Context, date string, tz string)
 	if f.calls <= f.failures {
 		return nil, errors.New("boom")
 	}
-	return []domain.Game{{ID: "ok"}}, nil
+	return []games.Game{{ID: "ok"}}, nil
 }
 
 func TestRetryingProviderRetriesAndSucceeds(t *testing.T) {
@@ -203,7 +205,7 @@ type rateLimitThenSuccessProvider struct {
 	calls int
 }
 
-func (f *rateLimitThenSuccessProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (f *rateLimitThenSuccessProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
 	_ = ctx
 	_ = date
 	_ = tz
@@ -214,5 +216,94 @@ func (f *rateLimitThenSuccessProvider) FetchGames(ctx context.Context, date stri
 			StatusCode: 429,
 		}
 	}
-	return []domain.Game{{ID: "ok"}}, nil
+	return []games.Game{{ID: "ok"}}, nil
+}
+
+type alwaysFailTeamProvider struct{}
+
+func (a *alwaysFailTeamProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
+	return nil, errors.New("games not supported")
+}
+
+func (a *alwaysFailTeamProvider) FetchTeams(ctx context.Context) ([]teams.Team, error) {
+	return nil, errors.New("fail teams")
+}
+
+func (a *alwaysFailTeamProvider) FetchPlayers(ctx context.Context) ([]players.Player, error) {
+	return nil, errors.New("fail players")
+}
+
+func TestRetryingProviderRetriesTeamsAndPlayers(t *testing.T) {
+	rp := NewRetryingProvider(&alwaysFailTeamProvider{}, nil, metrics.NewRecorder(), "multi", 2, time.Millisecond).(*retryingProvider)
+	rp.backoffFn = func(attempt int) time.Duration {
+		_ = attempt
+		return 0
+	}
+
+	if _, err := rp.FetchTeams(context.Background()); err == nil {
+		t.Fatalf("expected team fetch to fail after retries")
+	}
+	if _, err := rp.FetchPlayers(context.Background()); err == nil {
+		t.Fatalf("expected player fetch to fail after retries")
+	}
+}
+
+type staticTeamPlayerProvider struct{}
+
+func (s *staticTeamPlayerProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
+	return nil, errors.New("games not supported")
+}
+func (s *staticTeamPlayerProvider) FetchTeams(ctx context.Context) ([]teams.Team, error) {
+	return []teams.Team{{ID: "t1"}}, nil
+}
+func (s *staticTeamPlayerProvider) FetchPlayers(ctx context.Context) ([]players.Player, error) {
+	return []players.Player{{ID: "p1"}}, nil
+}
+
+func TestRetryingProviderTeamsAndPlayersSuccess(t *testing.T) {
+	rec := metrics.NewRecorder()
+	rp := NewRetryingProvider(&staticTeamPlayerProvider{}, nil, rec, "multi", 2, time.Millisecond).(*retryingProvider)
+
+	teams, err := rp.FetchTeams(context.Background())
+	if err != nil || len(teams) != 1 {
+		t.Fatalf("expected teams success, got err=%v teams=%v", err, teams)
+	}
+	players, err := rp.FetchPlayers(context.Background())
+	if err != nil || len(players) != 1 {
+		t.Fatalf("expected players success, got err=%v players=%v", err, players)
+	}
+	if got := rec.ProviderCalls("multi"); got == 0 {
+		t.Fatalf("expected metrics recorded")
+	}
+}
+
+func TestRetryingProviderContextCancelForTeamsAndPlayers(t *testing.T) {
+	rec := metrics.NewRecorder()
+	rp := NewRetryingProvider(&alwaysFailTeamProvider{}, nil, rec, "multi", 3, time.Second).(*retryingProvider)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := rp.FetchTeams(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled context for teams, got %v", err)
+	}
+	if _, err := rp.FetchPlayers(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled context for players, got %v", err)
+	}
+}
+
+type gamesOnlyRetryProvider struct{}
+
+func (g *gamesOnlyRetryProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
+	return nil, nil
+}
+
+func TestRetryingProviderReturnsUnavailableWhenTeamsOrPlayersUnsupported(t *testing.T) {
+	rp := NewRetryingProvider(&gamesOnlyRetryProvider{}, nil, metrics.NewRecorder(), "games-only", 1, time.Millisecond).(*retryingProvider)
+	if _, err := rp.FetchTeams(context.Background()); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("expected ErrProviderUnavailable for teams, got %v", err)
+	}
+	if _, err := rp.FetchPlayers(context.Background()); !errors.Is(err, ErrProviderUnavailable) {
+		t.Fatalf("expected ErrProviderUnavailable for players, got %v", err)
+	}
 }

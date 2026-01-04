@@ -101,6 +101,108 @@
       "response": []
     },
     {
+      "name": "Teams",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/teams",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "teams"
+          ],
+          "query": [
+            {
+              "key": "activeOnly",
+              "value": "true",
+              "description": "When true, return only the latest active roster view",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Team By ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/teams/{{teamId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "teams",
+            "{{teamId}}"
+          ],
+          "query": [
+            {
+              "key": "activeOnly",
+              "value": "true",
+              "description": "When true, return only the latest active roster view",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Players",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/players",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "players"
+          ],
+          "query": [
+            {
+              "key": "activeOnly",
+              "value": "true",
+              "description": "When true, return only the latest active roster view",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Player By ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/players/{{playerId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "players",
+            "{{playerId}}"
+          ],
+          "query": [
+            {
+              "key": "activeOnly",
+              "value": "true",
+              "description": "When true, return only the latest active roster view",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
       "name": "Admin Refresh Snapshot",
       "request": {
         "method": "POST",
@@ -152,6 +254,14 @@
     {
       "key": "id",
       "value": "fixture-1"
+    },
+    {
+      "key": "teamId",
+      "value": "bos"
+    },
+    {
+      "key": "playerId",
+      "value": "player-1"
     },
     {
       "key": "tz",

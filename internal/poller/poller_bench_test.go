@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/preston-bernstein/nba-data-service/internal/app/games"
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 	"github.com/preston-bernstein/nba-data-service/internal/store"
 )
 
 type benchProvider struct {
-	games []domain.Game
+	games []domaingames.Game
 }
 
-func (b *benchProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (b *benchProvider) FetchGames(ctx context.Context, date string, tz string) ([]domaingames.Game, error) {
 	_ = ctx
 	_ = date
 	_ = tz
@@ -23,15 +24,15 @@ func (b *benchProvider) FetchGames(ctx context.Context, date string, tz string) 
 
 func BenchmarkPollerFetchOnce(b *testing.B) {
 	p := &benchProvider{
-		games: []domain.Game{
+		games: []domaingames.Game{
 			{
 				ID:        "bench-game",
 				Provider:  "fixture",
-				HomeTeam:  domain.Team{ID: "home", Name: "Home"},
-				AwayTeam:  domain.Team{ID: "away", Name: "Away"},
+				HomeTeam:  teams.Team{ID: "home", Name: "Home"},
+				AwayTeam:  teams.Team{ID: "away", Name: "Away"},
 				StartTime: time.Date(2024, 1, 1, 19, 30, 0, 0, time.UTC).Format(time.RFC3339),
-				Status:    domain.StatusFinal,
-				Score:     domain.Score{Home: 100, Away: 95},
+				Status:    domaingames.StatusFinal,
+				Score:     domaingames.Score{Home: 100, Away: 95},
 			},
 		},
 	}

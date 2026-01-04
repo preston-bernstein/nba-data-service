@@ -1,8 +1,10 @@
-package domain
+package games
 
 import (
 	"reflect"
 	"testing"
+
+	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 )
 
 func TestGameStatusValues(t *testing.T) {
@@ -47,5 +49,15 @@ func TestGameJSONTags(t *testing.T) {
 		if jsonTag := field.Tag.Get("json"); jsonTag != fc.tag {
 			t.Fatalf("field %s expected json tag %s, got %s", fc.name, fc.tag, jsonTag)
 		}
+	}
+}
+
+func TestGameUsesTeamsDomain(t *testing.T) {
+	g := Game{
+		HomeTeam: teams.Team{ID: "t1", Name: "Home"},
+		AwayTeam: teams.Team{ID: "t2", Name: "Away"},
+	}
+	if g.HomeTeam.Name != "Home" || g.AwayTeam.Name != "Away" {
+		t.Fatalf("expected teams embedded from teams domain")
 	}
 }

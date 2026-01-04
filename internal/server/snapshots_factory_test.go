@@ -6,6 +6,7 @@ import (
 
 	"github.com/preston-bernstein/nba-data-service/internal/config"
 	"github.com/preston-bernstein/nba-data-service/internal/providers/fixture"
+	"github.com/preston-bernstein/nba-data-service/internal/store"
 )
 
 func TestBuildSnapshotsRespectsConfig(t *testing.T) {
@@ -17,7 +18,7 @@ func TestBuildSnapshotsRespectsConfig(t *testing.T) {
 		},
 	}
 	prov := fixture.New()
-	components := buildSnapshots(cfg, prov, nil)
+	components := buildSnapshots(cfg, prov, store.NewMemoryStore(), nil)
 	if components.store == nil || components.writer == nil || components.syncer == nil {
 		t.Fatalf("expected snapshots components to be initialized")
 	}

@@ -10,18 +10,19 @@ import (
 	"time"
 
 	"github.com/preston-bernstein/nba-data-service/internal/app/games"
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 	"github.com/preston-bernstein/nba-data-service/internal/store"
 )
 
 type stubProvider struct {
-	games  []domain.Game
+	games  []domaingames.Game
 	err    error
 	calls  atomic.Int32
 	notify chan struct{}
 }
 
-func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) ([]domain.Game, error) {
+func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) ([]domaingames.Game, error) {
 	_ = ctx
 	_ = date
 	_ = tz
@@ -37,19 +38,19 @@ func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) (
 }
 
 func TestPollerFetchesAndStoresGames(t *testing.T) {
-	g := domain.Game{
+	g := domaingames.Game{
 		ID:        "poll-game",
 		Provider:  "stub",
-		HomeTeam:  domain.Team{ID: "home", Name: "Home", ExternalID: 1},
-		AwayTeam:  domain.Team{ID: "away", Name: "Away", ExternalID: 2},
+		HomeTeam:  teams.Team{ID: "home", Name: "Home"},
+		AwayTeam:  teams.Team{ID: "away", Name: "Away"},
 		StartTime: time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		Status:    domain.StatusScheduled,
-		Score:     domain.Score{Home: 0, Away: 0},
-		Meta:      domain.GameMeta{Season: "2023-2024", UpstreamGameID: 10},
+		Status:    domaingames.StatusScheduled,
+		Score:     domaingames.Score{Home: 0, Away: 0},
+		Meta:      domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 10},
 	}
 
 	provider := &stubProvider{
-		games:  []domain.Game{g},
+		games:  []domaingames.Game{g},
 		notify: make(chan struct{}),
 	}
 
@@ -84,7 +85,7 @@ func TestPollerFetchesAndStoresGames(t *testing.T) {
 
 func TestPollerStopsOnContextCancel(t *testing.T) {
 	provider := &stubProvider{
-		games:  []domain.Game{},
+		games:  []domaingames.Game{},
 		notify: make(chan struct{}),
 	}
 
@@ -115,7 +116,7 @@ func TestPollerStopsOnContextCancel(t *testing.T) {
 
 func TestPollerStopIsIdempotent(t *testing.T) {
 	provider := &stubProvider{
-		games: []domain.Game{},
+		games: []domaingames.Game{},
 	}
 
 	s := store.NewMemoryStore()
@@ -133,7 +134,7 @@ func TestPollerStopIsIdempotent(t *testing.T) {
 
 func TestPollerStartIsIdempotent(t *testing.T) {
 	provider := &stubProvider{
-		games: []domain.Game{},
+		games: []domaingames.Game{},
 	}
 
 	s := store.NewMemoryStore()
@@ -152,9 +153,41 @@ func TestPollerStartIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestPollerDefaultsInterval(t *testing.T) {
+	p := New(&stubProvider{}, games.NewService(store.NewMemoryStore()), nil, nil, 0)
+	if p.interval != defaultInterval {
+		t.Fatalf("expected default interval %s, got %s", defaultInterval, p.interval)
+	}
+}
+
+func TestPollerStartReturnsWhenAlreadyStarted(t *testing.T) {
+	provider := &stubProvider{}
+	p := New(provider, games.NewService(store.NewMemoryStore()), nil, nil, time.Hour)
+	p.started = true
+	p.Start(context.Background())
+	if p.ticker != nil {
+		t.Fatalf("expected ticker not to be created when already started")
+	}
+}
+
+func TestPollerStopTriggersDoneChannel(t *testing.T) {
+	provider := &stubProvider{}
+	p := New(provider, games.NewService(store.NewMemoryStore()), nil, nil, 10*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p.Start(ctx)
+	time.Sleep(15 * time.Millisecond) // allow startup
+
+	if err := p.Stop(context.Background()); err != nil {
+		t.Fatalf("expected stop without error, got %v", err)
+	}
+	time.Sleep(10 * time.Millisecond) // allow goroutine to exit via done channel
+}
+
 func TestPollerStatusTracksFailuresAndSuccess(t *testing.T) {
 	provider := &stubProvider{
-		games: []domain.Game{},
+		games: []domaingames.Game{},
 		err:   errors.New("boom"),
 	}
 
@@ -206,6 +239,17 @@ func TestPollerLogsOnErrorAndSuccess(t *testing.T) {
 	p.fetchOnce(context.Background()) // should log error
 
 	provider.err = nil
-	provider.games = []domain.Game{{ID: "ok"}}
+	provider.games = []domaingames.Game{{ID: "ok"}}
 	p.fetchOnce(context.Background()) // should log info
+}
+
+func TestPollerProviderExposesWrappedProvider(t *testing.T) {
+	provider := &stubProvider{}
+	s := store.NewMemoryStore()
+	svc := games.NewService(s)
+	p := New(provider, svc, nil, nil, time.Minute)
+
+	if got := p.Provider(); got != provider {
+		t.Fatalf("expected provider returned")
+	}
 }

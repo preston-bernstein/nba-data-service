@@ -1,6 +1,7 @@
 package snapshots
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,13 +9,35 @@ import (
 	"sort"
 	"time"
 
-	"github.com/preston-bernstein/nba-data-service/internal/domain"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	domainplayers "github.com/preston-bernstein/nba-data-service/internal/domain/players"
+	domainteams "github.com/preston-bernstein/nba-data-service/internal/domain/teams"
+)
+
+type snapshotKind string
+
+const (
+	kindGames   snapshotKind = "games"
+	kindTeams   snapshotKind = "teams"
+	kindPlayers snapshotKind = "players"
 )
 
 // Writer persists snapshots and manifest with pruning.
 type Writer struct {
 	basePath      string
 	retentionDays int
+}
+
+// TeamsSnapshot captures team data at a point in time.
+type TeamsSnapshot struct {
+	Date  string             `json:"date"`
+	Teams []domainteams.Team `json:"teams"`
+}
+
+// PlayersSnapshot captures player data at a point in time.
+type PlayersSnapshot struct {
+	Date    string                 `json:"date"`
+	Players []domainplayers.Player `json:"players"`
 }
 
 // NewWriter constructs a writer rooted at basePath with a rolling window retention.
@@ -28,8 +51,8 @@ func NewWriter(basePath string, retentionDays int) *Writer {
 	}
 }
 
-func (w *Writer) snapshotPath(date string) string {
-	return filepath.Join(w.basePath, "games", fmt.Sprintf("%s.json", date))
+func (w *Writer) snapshotPath(kind snapshotKind, date string) string {
+	return filepath.Join(w.basePath, string(kind), fmt.Sprintf("%s.json", date))
 }
 
 // BasePath exposes the writer root path (primarily for testing).
@@ -41,27 +64,74 @@ func (w *Writer) BasePath() string {
 }
 
 // WriteGamesSnapshot writes the games snapshot for the given date (YYYY-MM-DD) and prunes old snapshots.
-func (w *Writer) WriteGamesSnapshot(date string, snapshot domain.TodayResponse) error {
+func (w *Writer) WriteGamesSnapshot(date string, snapshot domaingames.TodayResponse) error {
+	if snapshot.Date == "" {
+		snapshot.Date = date
+	}
+	sort.Slice(snapshot.Games, func(i, j int) bool {
+		return snapshot.Games[i].ID < snapshot.Games[j].ID
+	})
+	return w.writeSnapshot(kindGames, date, snapshot)
+}
+
+// WriteTeamsSnapshot writes the teams snapshot for the given date (YYYY-MM-DD) and prunes old snapshots.
+func (w *Writer) WriteTeamsSnapshot(date string, snapshot TeamsSnapshot) error {
+	if snapshot.Date == "" {
+		snapshot.Date = date
+	}
+	sort.Slice(snapshot.Teams, func(i, j int) bool {
+		if snapshot.Teams[i].ID == snapshot.Teams[j].ID {
+			return snapshot.Teams[i].Name < snapshot.Teams[j].Name
+		}
+		return snapshot.Teams[i].ID < snapshot.Teams[j].ID
+	})
+	return w.writeSnapshot(kindTeams, date, snapshot)
+}
+
+// WritePlayersSnapshot writes the players snapshot for the given date (YYYY-MM-DD) and prunes old snapshots.
+func (w *Writer) WritePlayersSnapshot(date string, snapshot PlayersSnapshot) error {
+	if snapshot.Date == "" {
+		snapshot.Date = date
+	}
+	sort.Slice(snapshot.Players, func(i, j int) bool {
+		pi, pj := snapshot.Players[i], snapshot.Players[j]
+		if pi.Team.ID != pj.Team.ID {
+			return pi.Team.ID < pj.Team.ID
+		}
+		if pi.LastName != pj.LastName {
+			return pi.LastName < pj.LastName
+		}
+		if pi.FirstName != pj.FirstName {
+			return pi.FirstName < pj.FirstName
+		}
+		return pi.ID < pj.ID
+	})
+	return w.writeSnapshot(kindPlayers, date, snapshot)
+}
+
+func (w *Writer) writeSnapshot(kind snapshotKind, date string, payload any) error {
 	if w == nil {
 		return fmt.Errorf("snapshot writer not configured")
 	}
 	if date == "" {
 		return fmt.Errorf("date required")
 	}
-	if snapshot.Date == "" {
-		snapshot.Date = date
-	}
-	target := w.snapshotPath(date)
+
+	target := w.snapshotPath(kind, date)
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
 
-	// Write snapshot atomically.
 	tmp := target + ".tmp"
-	data, err := json.MarshalIndent(snapshot, "", "  ")
+	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return err
 	}
+
+	if existing, err := os.ReadFile(target); err == nil && bytes.Equal(existing, data) {
+		return w.updateManifest(kind, date)
+	}
+
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
@@ -69,41 +139,56 @@ func (w *Writer) WriteGamesSnapshot(date string, snapshot domain.TodayResponse) 
 		return err
 	}
 
-	// Update manifest and prune.
-	manifestPath := filepath.Join(w.basePath, "manifest.json")
-	m, _ := readManifest(manifestPath, w.retentionDays)
-	m.Games.LastRefreshed = time.Now().UTC()
-	m.Retention.GamesDays = w.retentionDays
-
-	dates, err := w.listGameDates()
-	if err != nil {
-		return err
-	}
-	// Ensure current date is included.
-	found := false
-	for _, d := range dates {
-		if d == date {
-			found = true
-			break
-		}
-	}
-	if !found {
-		dates = append(dates, date)
-	}
-	prunedDates, err := w.pruneOldSnapshots(dates)
-	if err != nil {
-		return err
-	}
-	m.Games.Dates = prunedDates
-	if err := writeManifest(w.basePath, m); err != nil {
-		return err
-	}
-	return nil
+	return w.updateManifest(kind, date)
 }
 
-func (w *Writer) listGameDates() ([]string, error) {
-	gamesDir := filepath.Join(w.basePath, "games")
-	entries, err := os.ReadDir(gamesDir)
+func (w *Writer) updateManifest(kind snapshotKind, date string) error {
+	manifestPath := filepath.Join(w.basePath, "manifest.json")
+	m, _ := readManifest(manifestPath, w.retentionDays)
+	now := time.Now().UTC()
+
+	dates, err := w.listDates(kind)
+	if err != nil {
+		return err
+	}
+	if !containsDate(dates, date) {
+		dates = append(dates, date)
+	}
+	pruned, err := w.pruneOldSnapshots(kind, dates)
+	if err != nil {
+		return err
+	}
+
+	switch kind {
+	case kindGames:
+		m.Games.Dates = pruned
+		m.Games.LastRefreshed = now
+		m.Retention.GamesDays = w.retentionDays
+	case kindTeams:
+		m.Teams.Dates = pruned
+		m.Teams.LastRefreshed = now
+		m.Retention.TeamsDays = w.retentionDays
+	case kindPlayers:
+		m.Players.Dates = pruned
+		m.Players.LastRefreshed = now
+		m.Retention.PlayersDays = w.retentionDays
+	}
+
+	return writeManifest(w.basePath, m)
+}
+
+func containsDate(dates []string, date string) bool {
+	for _, d := range dates {
+		if d == date {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *Writer) listDates(kind snapshotKind) ([]string, error) {
+	dir := filepath.Join(w.basePath, string(kind))
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []string{}, nil
@@ -125,20 +210,18 @@ func (w *Writer) listGameDates() ([]string, error) {
 	return dates, nil
 }
 
-func (w *Writer) pruneOldSnapshots(dates []string) ([]string, error) {
-	// Keep only dates within retentionDays from now (date-level, not time-of-day).
+func (w *Writer) pruneOldSnapshots(kind snapshotKind, dates []string) ([]string, error) {
 	now := time.Now().UTC()
 	cutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -w.retentionDays)
 	var keep []string
 	for _, d := range dates {
 		parsed, err := time.Parse("2006-01-02", d)
 		if err != nil {
-			// If unparsable, keep it to avoid accidental deletes.
 			keep = append(keep, d)
 			continue
 		}
 		if parsed.Before(cutoff) {
-			path := w.snapshotPath(d)
+			path := w.snapshotPath(kind, d)
 			_ = os.Remove(path)
 			continue
 		}
