@@ -1,7 +1,7 @@
 # NBA Data Service (Go)
 
 [![Build](https://github.com/preston-bernstein/nba-data-service/actions/workflows/ci.yml/badge.svg)](https://github.com/preston-bernstein/nba-data-service/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)](coverage.out)
+[![Coverage](https://codecov.io/gh/preston-bernstein/nba-data-service/branch/main/graph/badge.svg)](https://codecov.io/gh/preston-bernstein/nba-data-service)
 [![Go Version](https://img.shields.io/badge/go-1.21+-blue)](https://go.dev/doc/devel/release)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/preston-bernstein/nba-data-service)](https://goreportcard.com/report/github.com/preston-bernstein/nba-data-service)
