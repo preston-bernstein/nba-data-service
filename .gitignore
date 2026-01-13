@@ -23,8 +23,6 @@ coverage.out
 
 # Local snapshot data
 data/snapshots/
-# Catalog database
-data/*.db
 
 # Internal governance docs
 AGENTS*
