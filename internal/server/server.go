@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/preston-bernstein/nba-data-service/internal/app/games"
 	"github.com/preston-bernstein/nba-data-service/internal/config"
 	httpserver "github.com/preston-bernstein/nba-data-service/internal/http"
 	"github.com/preston-bernstein/nba-data-service/internal/http/handlers"
@@ -14,7 +13,6 @@ import (
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/poller"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
-	"github.com/preston-bernstein/nba-data-service/internal/store"
 )
 
 var metricsSetup = metrics.Setup
@@ -23,8 +21,6 @@ type Server struct {
 	cfg           config.Config
 	logger        *slog.Logger
 	metrics       *metrics.Recorder
-	store         *store.MemoryStore
-	gamesService  *games.Service
 	httpServer    httpServer
 	metricsServer httpServer
 	poller        Poller
@@ -50,16 +46,14 @@ func newServerWithMetrics(cfg config.Config, logger *slog.Logger, provider provi
 	} else {
 		provider = providers.NewRetryingProvider(provider, logger, recorder, normalizeProviderName(cfg.Provider, provider), 0, 0)
 	}
-	memoryStore, gameSvc := buildServices(cfg, logger)
-	plr := poller.New(provider, gameSvc, logger, recorder, cfg.PollInterval)
-	httpSrv := buildHTTPServer(cfg, memoryStore, gameSvc, logger, provider, recorder, plr)
+	snaps := buildSnapshots(cfg, provider, logger)
+	plr := poller.New(provider, snaps.writer, logger, recorder, cfg.PollInterval)
+	httpSrv := buildHTTPServer(cfg, logger, provider, recorder, plr, snaps)
 
 	return &Server{
 		cfg:           cfg,
 		logger:        logger,
 		metrics:       recorder,
-		store:         memoryStore,
-		gamesService:  gameSvc,
 		httpServer:    httpSrv,
 		metricsServer: metricsSrv,
 		poller:        plr,
@@ -68,31 +62,23 @@ func newServerWithMetrics(cfg config.Config, logger *slog.Logger, provider provi
 }
 
 // newServerWithDeps is used for testing to inject custom components.
-func newServerWithDeps(cfg config.Config, logger *slog.Logger, gameSvc *games.Service, httpSrv httpServer, plr Poller) *Server {
+func newServerWithDeps(cfg config.Config, logger *slog.Logger, httpSrv httpServer, plr Poller) *Server {
 	return &Server{
-		cfg:          cfg,
-		logger:       logger,
-		store:        nil,
-		gamesService: gameSvc,
-		httpServer:   httpSrv,
-		poller:       plr,
+		cfg:        cfg,
+		logger:     logger,
+		httpServer: httpSrv,
+		poller:     plr,
 	}
 }
 
-func buildServices(cfg config.Config, logger *slog.Logger) (*store.MemoryStore, *games.Service) {
-	memoryStore := store.NewMemoryStore()
-	return memoryStore, games.NewService(memoryStore)
-}
-
-func buildHTTPServer(cfg config.Config, memoryStore *store.MemoryStore, gameSvc *games.Service, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder, plr Poller) httpServer {
+func buildHTTPServer(cfg config.Config, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder, plr Poller, snaps snapshotComponents) httpServer {
 	var statusFn func() poller.Status
 	if plr != nil {
 		statusFn = plr.Status
 	}
 
-	snaps := buildSnapshots(cfg, provider, logger)
-	handler := handlers.NewHandler(gameSvc, snaps.store, logger, statusFn)
-	admin := handlers.NewAdminHandler(gameSvc, snaps.writer, provider, cfg.Snapshots.AdminToken, logger)
+	handler := handlers.NewHandler(snaps.store, logger, statusFn)
+	admin := handlers.NewAdminHandler(snaps.writer, provider, cfg.Snapshots.AdminToken, logger)
 	router := httpserver.NewRouter(handler)
 	// Optionally mount admin refresh endpoint if token is set.
 	if admin != nil && cfg.Snapshots.AdminToken != "" {

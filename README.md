@@ -14,8 +14,7 @@
 ### Endpoints
 - `GET /health` — liveness.
 - `GET /ready` — readiness (poller status).
-- `GET /games/today` — cached games; falls back to snapshot; optional `tz`.
-- `GET /games?date=YYYY-MM-DD` — snapshot for a specific date.
+- `GET /games?date=YYYY-MM-DD` — snapshot for a specific date (required).
 - `GET /games/{id}` — game by ID.
 - `POST /admin/snapshots/refresh?date=YYYY-MM-DD&tz=TZ` — write a snapshot (requires `ADMIN_TOKEN` header bearer token).
 
@@ -35,7 +34,7 @@ make coverage
 ### Quick curl (fixture defaults)
 ```sh
 curl http://localhost:4000/health
-curl http://localhost:4000/games/today
+curl http://localhost:4000/games?date=2024-01-01
 curl http://localhost:4000/games/fixture-1
 ```
 
@@ -63,10 +62,8 @@ curl http://localhost:4000/games/fixture-1
 ### Structure
 - `cmd/server` — entrypoint.
 - `internal/http` — router, handlers, middleware.
-- `internal/app` — games service over the shared store.
 - `internal/providers` — fixture, balldontlie, retry/limit wrappers.
 - `internal/snapshots` — fs store, writer, syncer.
-- `internal/store` — memory cache.
 - `internal/config`, `logging`, `metrics`, `poller`, `server`.
 
 ### Notes

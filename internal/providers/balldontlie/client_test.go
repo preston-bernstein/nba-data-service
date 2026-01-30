@@ -24,29 +24,14 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 		capturedQueries = append(capturedQueries, req.URL.RawQuery)
 		capturedAuth = req.Header.Get("Authorization")
 
-		body := `{
-			"data": [
-				{
-					"id": 10,
-					"date": "2024-01-02T15:00:00Z",
-					"status": "Final",
-					"time": "Final",
-					"period": 4,
-					"postseason": false,
-					"home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" },
-					"visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" },
-					"home_team_score": 110,
-					"visitor_team_score": 102,
-					"season": 2023
-				}
-			]
-		}`
+		var body string
 		if len(capturedQueries) == 1 {
 			body = `{
 				"data": [
 					{
 						"id": 10,
-						"date": "2024-01-02T15:00:00Z",
+						"date": "2024-01-02",
+						"datetime": "2024-01-02T15:00:00Z",
 						"status": "Final",
 						"time": "Final",
 						"period": 4,
@@ -67,7 +52,8 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 				"data": [
 					{
 						"id": 11,
-						"date": "2024-01-03T15:00:00Z",
+						"date": "2024-01-03",
+						"datetime": "2024-01-03T15:00:00Z",
 						"status": "Final",
 						"time": "Final",
 						"period": 4,
@@ -242,7 +228,8 @@ func TestFetchGamesRespectsMaxPagesCap(t *testing.T) {
 			"data": [
 				{
 					"id": 1,
-					"date": "2024-01-01T00:00:00Z",
+					"date": "2024-01-01",
+					"datetime": "2024-01-01T00:00:00Z",
 					"status": "Final",
 					"home_team": { "id": 1, "full_name": "Home" },
 					"visitor_team": { "id": 2, "full_name": "Away" },
@@ -449,8 +436,8 @@ func TestFetchGamesDedupesByID(t *testing.T) {
 		_ = req
 		body := `{
 			"data": [
-				{"id": 1, "date": "2024-01-02T15:00:00Z", "status": "Final", "time": "Final", "period": 4, "postseason": false, "home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" }, "visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" }, "home_team_score": 110, "visitor_team_score": 102, "season": 2023},
-				{"id": 1, "date": "2024-01-02T15:00:00Z", "status": "Final", "time": "Final", "period": 4, "postseason": false, "home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" }, "visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" }, "home_team_score": 120, "visitor_team_score": 112, "season": 2023}
+				{"id": 1, "date": "2024-01-02", "datetime": "2024-01-02T15:00:00Z", "status": "Final", "time": "Final", "period": 4, "postseason": false, "home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" }, "visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" }, "home_team_score": 110, "visitor_team_score": 102, "season": 2023},
+				{"id": 1, "date": "2024-01-02", "datetime": "2024-01-02T15:00:00Z", "status": "Final", "time": "Final", "period": 4, "postseason": false, "home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" }, "visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" }, "home_team_score": 120, "visitor_team_score": 112, "season": 2023}
 			],
 			"meta": { "total_pages": 1 }
 		}`

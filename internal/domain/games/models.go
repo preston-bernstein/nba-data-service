@@ -40,8 +40,16 @@ type Game struct {
 	Meta      GameMeta   `json:"meta"`
 }
 
-// TodayResponse is the payload returned by /games/today.
+// TodayResponse is the payload returned by /games?date=YYYY-MM-DD.
 type TodayResponse struct {
 	Date  string `json:"date"`
 	Games []Game `json:"games"`
+}
+
+// NewTodayResponse builds a TodayResponse payload.
+func NewTodayResponse(date string, games []Game) TodayResponse {
+	return TodayResponse{
+		Date:  date,
+		Games: games,
+	}
 }

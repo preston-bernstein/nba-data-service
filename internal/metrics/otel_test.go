@@ -159,7 +159,7 @@ func TestOtelInstrumentsRecordingDoesNotPanic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected instruments, got %v", err)
 	}
-	inst.recordHTTPRequest("GET", "/games/today", 200, 50*time.Millisecond)
+	inst.recordHTTPRequest("GET", "/games", 200, 50*time.Millisecond)
 	inst.recordProviderAttempt("balldontlie", 75*time.Millisecond, nil)
 	inst.recordProviderAttempt("balldontlie", 90*time.Millisecond, errors.New("fail"))
 	inst.recordRateLimit("balldontlie", 2*time.Second)
@@ -287,8 +287,6 @@ func (m scriptedMeter) Float64Histogram(name string, opts ...metric.Float64Histo
 	}
 	return m.Meter.Float64Histogram(name, opts...)
 }
-
-func (scriptedMeter) meter() {}
 
 type scriptedProvider struct {
 	metric.MeterProvider

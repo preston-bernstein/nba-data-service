@@ -26,6 +26,14 @@ func writeError(w http.ResponseWriter, r *http.Request, status int, message stri
 	writeJSON(w, status, body, logger)
 }
 
+func requireMethod(w http.ResponseWriter, r *http.Request, method string, logger *slog.Logger) bool {
+	if r.Method != method {
+		writeError(w, r, http.StatusMethodNotAllowed, "method not allowed", logger)
+		return false
+	}
+	return true
+}
+
 func loggerFromContext(r *http.Request, fallback *slog.Logger) *slog.Logger {
 	if r == nil {
 		return fallback

@@ -8,7 +8,6 @@ func NewRouter(handler nethttp.Handler) nethttp.Handler {
 	mux.Handle("/health", handler)
 	mux.Handle("/ready", handler)
 	mux.Handle("/games", handler)
-	mux.Handle("/games/today", handler)
 	mux.Handle("/games/", handler)
 	return mux
 }

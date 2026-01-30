@@ -10,7 +10,8 @@ import (
 func TestMapGameTransformsFields(t *testing.T) {
 	resp := gameResponse{
 		ID:               42,
-		Date:             "2024-01-02T20:00:00Z",
+		Date:             "2024-01-02",
+		Datetime:         "2024-01-02T20:00:00Z",
 		Status:           "In Progress",
 		Time:             "Q3 05:00",
 		Period:           3,
@@ -39,7 +40,7 @@ func TestMapGameTransformsFields(t *testing.T) {
 	if game.Meta.Period != 3 || !game.Meta.Postseason || game.Meta.Time != "Q3 05:00" {
 		t.Fatalf("unexpected meta extras %+v", game.Meta)
 	}
-	if game.HomeTeam.ID != "team-10" || game.AwayTeam.ID != "team-20" {
+	if game.HomeTeam.ID != "HMS" || game.AwayTeam.ID != "AWS" {
 		t.Fatalf("unexpected team ids home=%s away=%s", game.HomeTeam.ID, game.AwayTeam.ID)
 	}
 	if game.HomeTeam.Abbreviation != "HMS" || game.HomeTeam.City != "Home" || game.HomeTeam.Conference != "East" || game.HomeTeam.Division != "Atlantic" {
@@ -82,7 +83,7 @@ func TestMapTeamCoversFields(t *testing.T) {
 
 	team := mapTeam(raw)
 	expected := teams.Team{
-		ID:           "team-9",
+		ID:           "ABC",
 		Name:         "ABC",
 		FullName:     "ABC City",
 		Abbreviation: "ABC",

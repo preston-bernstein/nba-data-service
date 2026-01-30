@@ -26,4 +26,7 @@ data/snapshots/
 
 # Internal governance docs
 AGENTS*
+CLAUDE*
 docs-internal/
+.gomodcache/
+data/

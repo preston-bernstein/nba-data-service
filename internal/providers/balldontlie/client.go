@@ -14,6 +14,7 @@ import (
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 // Config controls how the balldontlie client reaches the upstream API.
@@ -102,11 +103,11 @@ func (c *Client) buildRequest(ctx context.Context, date string, page int, loc *t
 
 func (c *Client) resolveDate(date string, loc *time.Location) string {
 	if date != "" {
-		if _, err := time.Parse("2006-01-02", date); err == nil {
+		if _, err := timeutil.ParseDate(date); err == nil {
 			return date
 		}
 	}
-	return c.now().In(loc).Format("2006-01-02")
+	return timeutil.FormatDate(c.now().In(loc))
 }
 
 func classifyErrorResponse(resp *http.Response, body []byte, now time.Time) error {

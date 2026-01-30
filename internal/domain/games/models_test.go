@@ -61,3 +61,23 @@ func TestGameUsesTeamsDomain(t *testing.T) {
 		t.Fatalf("expected teams embedded from teams domain")
 	}
 }
+
+func TestNewTodayResponse(t *testing.T) {
+	date := "2024-01-15"
+	games := []Game{
+		{ID: "g1", Status: StatusScheduled},
+		{ID: "g2", Status: StatusFinal},
+	}
+
+	resp := NewTodayResponse(date, games)
+
+	if resp.Date != date {
+		t.Fatalf("expected date %s, got %s", date, resp.Date)
+	}
+	if len(resp.Games) != 2 {
+		t.Fatalf("expected 2 games, got %d", len(resp.Games))
+	}
+	if resp.Games[0].ID != "g1" || resp.Games[1].ID != "g2" {
+		t.Fatalf("expected games in order, got %v", resp.Games)
+	}
+}

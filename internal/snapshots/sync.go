@@ -7,7 +7,9 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 // Syncer backfills and prunes game snapshots on a schedule.
@@ -60,7 +62,8 @@ func (s *Syncer) Run(ctx context.Context) {
 		return
 	}
 
-	s.logInfo(
+	logging.Info(
+		s.logger,
 		"snapshot sync starting",
 		"past_days", s.cfg.Days,
 		"future_days", s.cfg.FutureDays,
@@ -106,15 +109,15 @@ func (s *Syncer) daily(ctx context.Context) {
 
 func (s *Syncer) buildDates(now time.Time) []string {
 	var dates []string
-	today := now.Format("2006-01-02")
-	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
+	today := timeutil.FormatDate(now)
+	yesterday := timeutil.FormatDate(now.AddDate(0, 0, -1))
 
 	// Always refresh today and yesterday to capture live/final scores.
 	dates = append(dates, today, yesterday)
 
 	// Past window beyond yesterday: only fetch if missing (startup/outage).
 	for i := 2; i < s.cfg.Days; i++ {
-		date := now.AddDate(0, 0, -i).Format("2006-01-02")
+		date := timeutil.FormatDate(now.AddDate(0, 0, -i))
 		if !s.hasSnapshot(date) {
 			dates = append(dates, date)
 		}
@@ -122,7 +125,7 @@ func (s *Syncer) buildDates(now time.Time) []string {
 
 	// Future window: prefetch missing only.
 	for i := 1; i <= s.cfg.FutureDays; i++ {
-		date := now.AddDate(0, 0, i).Format("2006-01-02")
+		date := timeutil.FormatDate(now.AddDate(0, 0, i))
 		if !s.hasSnapshot(date) {
 			dates = append(dates, date)
 		}
@@ -135,22 +138,19 @@ func (s *Syncer) fetchAndWrite(ctx context.Context, date string) {
 	start := time.Now()
 	games, err := s.provider.FetchGames(ctx, date, "")
 	if err != nil {
-		s.logWarn("snapshot sync fetch failed", "date", date, "err", err)
+		logging.Warn(s.logger, "snapshot sync fetch failed", "date", date, "err", err)
 		return
 	}
 	if len(games) == 0 {
-		s.logWarn("snapshot sync received no games", "date", date)
+		logging.Warn(s.logger, "snapshot sync received no games", "date", date)
 		return
 	}
-	snap := domaingames.TodayResponse{
-		Date:  date,
-		Games: games,
-	}
+	snap := domaingames.NewTodayResponse(date, games)
 	if err := s.writer.WriteGamesSnapshot(date, snap); err != nil {
-		s.logWarn("snapshot sync write failed", "date", date, "err", err)
+		logging.Warn(s.logger, "snapshot sync write failed", "date", date, "err", err)
 		return
 	}
-	s.logInfo("snapshot written",
+	logging.Info(s.logger, "snapshot written",
 		"date", date,
 		"count", len(games),
 		"duration_ms", time.Since(start).Milliseconds(),
@@ -172,17 +172,5 @@ func (s *Syncer) sleep(ctx context.Context, d time.Duration) {
 	select {
 	case <-ctx.Done():
 	case <-timer.C:
-	}
-}
-
-func (s *Syncer) logInfo(msg string, args ...any) {
-	if s.logger != nil {
-		s.logger.Info(msg, args...)
-	}
-}
-
-func (s *Syncer) logWarn(msg string, args ...any) {
-	if s.logger != nil {
-		s.logger.Warn(msg, args...)
 	}
 }

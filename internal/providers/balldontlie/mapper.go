@@ -14,7 +14,7 @@ func mapGame(g gameResponse) games.Game {
 		Provider:  providerName,
 		HomeTeam:  mapTeam(g.HomeTeam),
 		AwayTeam:  mapTeam(g.VisitorTeam),
-		StartTime: g.Date,
+		StartTime: g.Datetime,
 		Status:    mapStatus(g.Status),
 		Score: games.Score{
 			Home: g.HomeTeamScore,
@@ -32,7 +32,7 @@ func mapGame(g gameResponse) games.Game {
 
 func mapTeam(t teamResponse) teams.Team {
 	return teams.Team{
-		ID:           fmt.Sprintf("team-%d", t.ID),
+		ID:           t.Abbreviation,
 		Name:         t.Name,
 		FullName:     t.FullName,
 		Abbreviation: t.Abbreviation,
