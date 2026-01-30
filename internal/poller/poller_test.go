@@ -5,39 +5,15 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/preston-bernstein/nba-data-service/internal/app/games"
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
-	"github.com/preston-bernstein/nba-data-service/internal/store"
+	"github.com/preston-bernstein/nba-data-service/internal/teststubs"
 )
 
-type stubProvider struct {
-	games  []domaingames.Game
-	err    error
-	calls  atomic.Int32
-	notify chan struct{}
-}
-
-func (s *stubProvider) FetchGames(ctx context.Context, date string, tz string) ([]domaingames.Game, error) {
-	_ = ctx
-	_ = date
-	_ = tz
-	if s.notify != nil {
-		select {
-		case <-s.notify:
-		default:
-			close(s.notify)
-		}
-	}
-	s.calls.Add(1)
-	return s.games, s.err
-}
-
-func TestPollerFetchesAndStoresGames(t *testing.T) {
+func TestPollerFetchesAndWritesSnapshot(t *testing.T) {
 	g := domaingames.Game{
 		ID:        "poll-game",
 		Provider:  "stub",
@@ -49,22 +25,24 @@ func TestPollerFetchesAndStoresGames(t *testing.T) {
 		Meta:      domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 10},
 	}
 
-	provider := &stubProvider{
-		games:  []domaingames.Game{g},
-		notify: make(chan struct{}),
+	provider := &teststubs.StubProvider{
+		Games:  []domaingames.Game{g},
+		Notify: make(chan struct{}),
 	}
 
-	s := store.NewMemoryStore()
-	svc := games.NewService(s)
+	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, svc, nil, nil, 10*time.Millisecond)
+	p := New(provider, writer, nil, nil, 10*time.Millisecond)
+	// Fix the time for deterministic date.
+	p.now = func() time.Time { return time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC) }
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	p.Start(ctx)
 
 	select {
-	case <-provider.notify:
+	case <-provider.Notify:
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timed out waiting for initial fetch")
 	}
@@ -74,32 +52,36 @@ func TestPollerFetchesAndStoresGames(t *testing.T) {
 	cancel()
 	_ = p.Stop(context.Background())
 
-	if got := len(svc.Games()); got != 1 {
-		t.Fatalf("expected 1 game stored, got %d", got)
+	// Verify snapshot was written.
+	snap, ok := writer.Written["2024-01-15"]
+	if !ok {
+		t.Fatalf("expected snapshot written for 2024-01-15")
+	}
+	if len(snap.Games) != 1 || snap.Games[0].ID != "poll-game" {
+		t.Fatalf("unexpected snapshot: %+v", snap)
 	}
 
-	if provider.calls.Load() < 1 {
+	if provider.Calls.Load() < 1 {
 		t.Fatalf("expected at least one fetch call")
 	}
 }
 
 func TestPollerStopsOnContextCancel(t *testing.T) {
-	provider := &stubProvider{
-		games:  []domaingames.Game{},
-		notify: make(chan struct{}),
+	provider := &teststubs.StubProvider{
+		Games:  []domaingames.Game{},
+		Notify: make(chan struct{}),
 	}
 
-	s := store.NewMemoryStore()
-	svc := games.NewService(s)
+	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, svc, nil, nil, 5*time.Millisecond)
+	p := New(provider, writer, nil, nil, 5*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	p.Start(ctx)
 
 	// Wait for initial fetch.
 	select {
-	case <-provider.notify:
+	case <-provider.Notify:
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timed out waiting for initial fetch")
 	}
@@ -107,22 +89,21 @@ func TestPollerStopsOnContextCancel(t *testing.T) {
 	cancel()
 	_ = p.Stop(context.Background())
 
-	callsAfterStop := provider.calls.Load()
+	callsAfterStop := provider.Calls.Load()
 	time.Sleep(20 * time.Millisecond)
-	if provider.calls.Load() != callsAfterStop {
-		t.Fatalf("expected no additional fetches after stop; before=%d after=%d", callsAfterStop, provider.calls.Load())
+	if provider.Calls.Load() != callsAfterStop {
+		t.Fatalf("expected no additional fetches after stop; before=%d after=%d", callsAfterStop, provider.Calls.Load())
 	}
 }
 
 func TestPollerStopIsIdempotent(t *testing.T) {
-	provider := &stubProvider{
-		games: []domaingames.Game{},
+	provider := &teststubs.StubProvider{
+		Games: []domaingames.Game{},
 	}
 
-	s := store.NewMemoryStore()
-	svc := games.NewService(s)
+	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, svc, nil, nil, time.Hour)
+	p := New(provider, writer, nil, nil, time.Hour)
 
 	if err := p.Stop(context.Background()); err != nil {
 		t.Fatalf("first stop returned error: %v", err)
@@ -133,14 +114,13 @@ func TestPollerStopIsIdempotent(t *testing.T) {
 }
 
 func TestPollerStartIsIdempotent(t *testing.T) {
-	provider := &stubProvider{
-		games: []domaingames.Game{},
+	provider := &teststubs.StubProvider{
+		Games: []domaingames.Game{},
 	}
 
-	s := store.NewMemoryStore()
-	svc := games.NewService(s)
+	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, svc, nil, nil, time.Hour)
+	p := New(provider, writer, nil, nil, time.Hour)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -154,15 +134,15 @@ func TestPollerStartIsIdempotent(t *testing.T) {
 }
 
 func TestPollerDefaultsInterval(t *testing.T) {
-	p := New(&stubProvider{}, games.NewService(store.NewMemoryStore()), nil, nil, 0)
+	p := New(&teststubs.StubProvider{}, &teststubs.StubSnapshotWriter{}, nil, nil, 0)
 	if p.interval != defaultInterval {
 		t.Fatalf("expected default interval %s, got %s", defaultInterval, p.interval)
 	}
 }
 
 func TestPollerStartReturnsWhenAlreadyStarted(t *testing.T) {
-	provider := &stubProvider{}
-	p := New(provider, games.NewService(store.NewMemoryStore()), nil, nil, time.Hour)
+	provider := &teststubs.StubProvider{}
+	p := New(provider, &teststubs.StubSnapshotWriter{}, nil, nil, time.Hour)
 	p.started = true
 	p.Start(context.Background())
 	if p.ticker != nil {
@@ -171,8 +151,8 @@ func TestPollerStartReturnsWhenAlreadyStarted(t *testing.T) {
 }
 
 func TestPollerStopTriggersDoneChannel(t *testing.T) {
-	provider := &stubProvider{}
-	p := New(provider, games.NewService(store.NewMemoryStore()), nil, nil, 10*time.Millisecond)
+	provider := &teststubs.StubProvider{}
+	p := New(provider, &teststubs.StubSnapshotWriter{}, nil, nil, 10*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -186,15 +166,14 @@ func TestPollerStopTriggersDoneChannel(t *testing.T) {
 }
 
 func TestPollerStatusTracksFailuresAndSuccess(t *testing.T) {
-	provider := &stubProvider{
-		games: []domaingames.Game{},
-		err:   errors.New("boom"),
+	provider := &teststubs.StubProvider{
+		Games: []domaingames.Game{},
+		Err:   errors.New("boom"),
 	}
 
-	s := store.NewMemoryStore()
-	svc := games.NewService(s)
+	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, svc, nil, nil, time.Millisecond)
+	p := New(provider, writer, nil, nil, time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -213,7 +192,7 @@ func TestPollerStatusTracksFailuresAndSuccess(t *testing.T) {
 		t.Fatalf("expected not ready after failure")
 	}
 
-	provider.err = nil
+	provider.Err = nil
 	p.fetchOnce(ctx)
 	status = p.Status()
 	if status.ConsecutiveFailures != 0 {
@@ -228,35 +207,53 @@ func TestPollerStatusTracksFailuresAndSuccess(t *testing.T) {
 }
 
 func TestPollerLogsOnErrorAndSuccess(t *testing.T) {
-	provider := &stubProvider{
-		err: errors.New("fail"),
+	provider := &teststubs.StubProvider{
+		Err: errors.New("fail"),
 	}
-	s := store.NewMemoryStore()
-	svc := games.NewService(s)
+	writer := &teststubs.StubSnapshotWriter{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 
-	p := New(provider, svc, logger, nil, time.Second)
+	p := New(provider, writer, logger, nil, time.Second)
 	p.fetchOnce(context.Background()) // should log error
 
-	provider.err = nil
-	provider.games = []domaingames.Game{{ID: "ok"}}
+	provider.Err = nil
+	provider.Games = []domaingames.Game{{ID: "ok"}}
 	p.fetchOnce(context.Background()) // should log info
 }
 
 func TestPollerProviderExposesWrappedProvider(t *testing.T) {
-	provider := &stubProvider{}
-	s := store.NewMemoryStore()
-	svc := games.NewService(s)
-	p := New(provider, svc, nil, nil, time.Minute)
+	provider := &teststubs.StubProvider{}
+	writer := &teststubs.StubSnapshotWriter{}
+	p := New(provider, writer, nil, nil, time.Minute)
 
 	if got := p.Provider(); got != provider {
 		t.Fatalf("expected provider returned")
 	}
 }
 
+func TestPollerNilWriterDoesNotPanic(t *testing.T) {
+	provider := &teststubs.StubProvider{Games: []domaingames.Game{{ID: "g1"}}}
+	p := New(provider, nil, nil, nil, time.Minute)
+	p.fetchOnce(context.Background()) // should not panic
+}
+
+func TestPollerWriteErrorLogsButContinues(t *testing.T) {
+	provider := &teststubs.StubProvider{Games: []domaingames.Game{{ID: "g1"}}}
+	writer := &teststubs.StubSnapshotWriter{Err: errors.New("write failed")}
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
+
+	p := New(provider, writer, logger, nil, time.Minute)
+	p.fetchOnce(context.Background())
+
+	// Should still record success even if write fails.
+	if p.Status().ConsecutiveFailures != 0 {
+		t.Fatalf("expected success despite write error")
+	}
+}
+
 func BenchmarkPollerFetchOnce(b *testing.B) {
-	provider := &stubProvider{
-		games: []domaingames.Game{
+	provider := &teststubs.StubProvider{
+		Games: []domaingames.Game{
 			{
 				ID:        "bench-game",
 				Provider:  "fixture",
@@ -268,9 +265,8 @@ func BenchmarkPollerFetchOnce(b *testing.B) {
 			},
 		},
 	}
-	s := store.NewMemoryStore()
-	svc := games.NewService(s)
-	p := New(provider, svc, nil, nil, time.Second)
+	writer := &teststubs.StubSnapshotWriter{}
+	p := New(provider, writer, nil, nil, time.Second)
 	ctx := context.Background()
 
 	b.ReportAllocs()

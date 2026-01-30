@@ -13,6 +13,7 @@ import (
 // Store defines how snapshots are loaded.
 type Store interface {
 	LoadGames(date string) (domaingames.TodayResponse, error)
+	FindGameByID(date, id string) (domaingames.Game, bool)
 }
 
 // FSStore loads snapshots from the filesystem.
@@ -58,11 +59,16 @@ func (s *FSStore) load(kind snapshotKind, date string, payload any) error {
 	return nil
 }
 
-func (s *FSStore) decodeFile(path string, payload any) error {
-	f, err := os.Open(path)
+// FindGameByID searches the snapshot for the given date and returns the game if found.
+func (s *FSStore) FindGameByID(date, id string) (domaingames.Game, bool) {
+	resp, err := s.LoadGames(date)
 	if err != nil {
-		return err
+		return domaingames.Game{}, false
 	}
-	defer f.Close()
-	return json.NewDecoder(f).Decode(payload)
+	for _, g := range resp.Games {
+		if g.ID == id {
+			return g, true
+		}
+	}
+	return domaingames.Game{}, false
 }

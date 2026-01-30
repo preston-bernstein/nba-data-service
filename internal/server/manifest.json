@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "generatedAt": "2026-01-20T14:02:52.811476Z",
+  "retention": {
+    "gamesDays": 14
+  },
+  "games": {
+    "dates": [
+      "2026-01-20"
+    ],
+    "lastRefreshed": "2026-01-20T14:02:52.811417Z"
+  }
+}

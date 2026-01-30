@@ -9,18 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/preston-bernstein/nba-data-service/internal/app/games"
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/poller"
-	"github.com/preston-bernstein/nba-data-service/internal/providers"
 	"github.com/preston-bernstein/nba-data-service/internal/snapshots"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 type nowFunc func() time.Time
 
-// Handler wires HTTP routes to the domain service.
+// Handler wires HTTP routes to the snapshot store.
 type Handler struct {
-	gamesSvc *games.Service
 	snaps    snapshots.Store
 	logger   *slog.Logger
 	now      nowFunc
@@ -28,9 +26,8 @@ type Handler struct {
 }
 
 // NewHandler constructs a Handler with defaults.
-func NewHandler(gameSvc *games.Service, snaps snapshots.Store, logger *slog.Logger, statusFn func() poller.Status) *Handler {
+func NewHandler(snaps snapshots.Store, logger *slog.Logger, statusFn func() poller.Status) *Handler {
 	return &Handler{
-		gamesSvc: gameSvc,
 		snaps:    snaps,
 		logger:   logger,
 		now:      time.Now,
@@ -45,7 +42,7 @@ func (h *Handler) ServeHTTP(w nethttp.ResponseWriter, r *nethttp.Request) {
 		h.Health(w, r)
 	case r.URL.Path == "/ready":
 		h.Ready(w, r)
-	case r.URL.Path == "/games" || r.URL.Path == "/games/today":
+	case r.URL.Path == "/games":
 		h.GamesToday(w, r)
 	case strings.HasPrefix(r.URL.Path, "/games/"):
 		h.GameByID(w, r)
@@ -55,8 +52,7 @@ func (h *Handler) ServeHTTP(w nethttp.ResponseWriter, r *nethttp.Request) {
 }
 
 func (h *Handler) Health(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if r.Method != nethttp.MethodGet {
-		writeError(w, r, nethttp.StatusMethodNotAllowed, "method not allowed", h.logger)
+	if !requireMethod(w, r, nethttp.MethodGet, h.logger) {
 		return
 	}
 	if err := r.Context().Err(); err != nil {
@@ -69,8 +65,7 @@ func (h *Handler) Health(w nethttp.ResponseWriter, r *nethttp.Request) {
 
 // Ready reports readiness for traffic (e.g., for Kubernetes probes).
 func (h *Handler) Ready(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if r.Method != nethttp.MethodGet {
-		writeError(w, r, nethttp.StatusMethodNotAllowed, "method not allowed", h.logger)
+	if !requireMethod(w, r, nethttp.MethodGet, h.logger) {
 		return
 	}
 	if h.statusFn == nil {
@@ -88,70 +83,48 @@ func (h *Handler) Ready(w nethttp.ResponseWriter, r *nethttp.Request) {
 	writeError(w, r, nethttp.StatusServiceUnavailable, msg, h.logger)
 }
 
-// GamesToday returns the current snapshot of games.
+// GamesToday returns the snapshot of games for a requested date.
 func (h *Handler) GamesToday(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if r.Method != nethttp.MethodGet {
-		writeError(w, r, nethttp.StatusMethodNotAllowed, "method not allowed", h.logger)
+	if !requireMethod(w, r, nethttp.MethodGet, h.logger) {
 		return
 	}
 	dateParam := r.URL.Query().Get("date")
-	games := h.gamesSvc.Games()
-	date := h.now().Format("2006-01-02")
+	if dateParam == "" {
+		writeError(w, r, nethttp.StatusBadRequest, "date query param required (expected YYYY-MM-DD)", h.logger)
+		return
+	}
+	now := h.now().UTC()
 	logger := loggerFromContext(r, h.logger)
-	tz := r.URL.Query().Get("tz")
 
-	if dateParam == "" && tz != "" {
-		if loc := providers.ResolveTimezone(tz); loc != nil {
-			date = h.now().In(loc).Format("2006-01-02")
-		}
+	parsed, err := timeutil.ParseDate(dateParam)
+	if err != nil {
+		writeError(w, r, nethttp.StatusBadRequest, "invalid date format (expected YYYY-MM-DD)", h.logger)
+		return
+	}
+	today := now.Truncate(24 * time.Hour)
+	minDate := today.AddDate(0, 0, -7)
+	maxDate := today.AddDate(0, 0, 7)
+	if parsed.Before(minDate) || parsed.After(maxDate) {
+		writeError(w, r, nethttp.StatusBadRequest, "date must be within 7 days of today", h.logger)
+		return
 	}
 
-	if dateParam != "" {
-		if _, err := time.Parse("2006-01-02", dateParam); err != nil {
-			writeError(w, r, nethttp.StatusBadRequest, "invalid date format (expected YYYY-MM-DD)", h.logger)
-			return
-		}
+	snap, err := h.loadSnapshot(dateParam)
+	if err != nil {
+		writeError(w, r, nethttp.StatusBadGateway, "snapshot unavailable", h.logger)
+		return
+	}
+	if logger != nil {
+		logger.Info("served snapshot games", "date", snap.Date, "provider", "snapshot", "count", len(snap.Games))
 	}
 
-	// For explicit date queries, serve snapshots only (no live upstream fetch).
-	if dateParam != "" {
-		snap, err := h.loadSnapshot(dateParam)
-		if err != nil {
-			writeError(w, r, nethttp.StatusBadGateway, "snapshot unavailable", h.logger)
-			return
-		}
-		games = snap.Games
-		date = snap.Date
-		if logger != nil {
-			logger.Info("served snapshot games", "date", date, "provider", "snapshot", "count", len(games))
-		}
-	} else {
-		// Default path: serve cache; if empty, try snapshot for the computed date.
-		if len(games) == 0 {
-			if snap, err := h.loadSnapshot(date); err == nil {
-				games = snap.Games
-				date = snap.Date
-				if logger != nil {
-					logger.Info("served snapshot games", "date", date, "provider", "snapshot", "count", len(games))
-				}
-			}
-		}
-		if logger != nil {
-			logger.Info("served cached games", "date", date, "provider", "cache", "count", len(games))
-		}
-	}
-
-	payload := domaingames.TodayResponse{
-		Date:  date,
-		Games: games,
-	}
+	payload := domaingames.NewTodayResponse(snap.Date, snap.Games)
 	writeJSON(w, nethttp.StatusOK, payload, h.logger)
 }
 
-// GameByID returns a specific game if present.
+// GameByID returns a specific game if present in today's snapshot.
 func (h *Handler) GameByID(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if r.Method != nethttp.MethodGet {
-		writeError(w, r, nethttp.StatusMethodNotAllowed, "method not allowed", h.logger)
+	if !requireMethod(w, r, nethttp.MethodGet, h.logger) {
 		return
 	}
 	// Expect path: /games/{id}
@@ -168,7 +141,12 @@ func (h *Handler) GameByID(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 
-	game, ok := h.gamesSvc.GameByID(id)
+	if h.snaps == nil {
+		writeError(w, r, nethttp.StatusBadGateway, "snapshot store not configured", h.logger)
+		return
+	}
+	today := timeutil.FormatDate(h.now().UTC())
+	game, ok := h.snaps.FindGameByID(today, id)
 	if !ok {
 		writeError(w, r, nethttp.StatusNotFound, "game not found", h.logger)
 		return

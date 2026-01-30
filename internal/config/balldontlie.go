@@ -3,11 +3,11 @@ package config
 import "time"
 
 const (
-	envBdlBaseURL   = "BALDONTLIE_BASE_URL"
-	envBdlAPIKey    = "BALDONTLIE_API_KEY"
-	envBdlTimezone  = "BALDONTLIE_TIMEZONE"
-	envBdlMaxPages  = "BALDONTLIE_MAX_PAGES"
-	envBdlPageDelay = "BALDONTLIE_PAGE_DELAY"
+	envBdlBaseURL   = "BALLDONTLIE_BASE_URL"
+	envBdlAPIKey    = "BALLDONTLIE_API_KEY"
+	envBdlTimezone  = "BALLDONTLIE_TIMEZONE"
+	envBdlMaxPages  = "BALLDONTLIE_MAX_PAGES"
+	envBdlPageDelay = "BALLDONTLIE_PAGE_DELAY"
 
 	defaultBdlBaseURL  = "https://api.balldontlie.io/v1"
 	defaultBdlTimezone = "America/New_York"
