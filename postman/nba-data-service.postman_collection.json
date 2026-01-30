@@ -41,24 +41,6 @@
       "response": []
     },
     {
-      "name": "Games Today",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/games/today",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "games",
-            "today"
-          ]
-        }
-      },
-      "response": []
-    },
-    {
       "name": "Games By Date",
       "request": {
         "method": "GET",

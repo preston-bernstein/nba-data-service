@@ -85,8 +85,8 @@ func normalizePath(path string) string {
 	}
 	path = strings.Split(path, "?")[0]
 	switch path {
-	case "/games", "/games/today":
-		return "/games/today"
+	case "/games":
+		return "/games"
 	case "/health":
 		return "/health"
 	default:

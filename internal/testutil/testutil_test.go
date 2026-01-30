@@ -30,7 +30,7 @@ func TestClockHelpers(t *testing.T) {
 	MustParseRFC3339("not-a-time")
 }
 
-func TestFixturesAndServiceHelper(t *testing.T) {
+func TestFixturesHelper(t *testing.T) {
 	g := SampleGame("id-1")
 	if g.ID != "id-1" || g.HomeTeam.ID == "" || g.AwayTeam.ID == "" {
 		t.Fatalf("unexpected game fixture %+v", g)
@@ -42,12 +42,6 @@ func TestFixturesAndServiceHelper(t *testing.T) {
 	team := SampleTeam("t1")
 	if team.ID != "t1" || team.FullName == "" {
 		t.Fatalf("unexpected team fixture %+v", team)
-	}
-
-	svc := NewServiceWithGames([]domaingames.Game{g})
-	games := svc.Games()
-	if len(games) != 1 || games[0].ID != "id-1" {
-		t.Fatalf("expected service seeded with game, got %+v", games)
 	}
 }
 
@@ -87,7 +81,9 @@ func TestSnapshotHelpers(t *testing.T) {
 func TestHTTPHelperErrorFormatting(t *testing.T) {
 	rr := httptest.NewRecorder()
 	rr.WriteHeader(http.StatusBadRequest)
-	rr.WriteString(strings.Repeat("x", 600))
+	if _, err := rr.WriteString(strings.Repeat("x", 600)); err != nil {
+		t.Fatalf("expected write success, got %v", err)
+	}
 
 	if err := statusError(rr, http.StatusOK); err == nil {
 		t.Fatalf("expected status error")
@@ -102,12 +98,16 @@ func TestHTTPHelperErrorFormatting(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	rr.WriteString(`{"ok":true}`)
+	if _, err := rr.WriteString(`{"ok":true}`); err != nil {
+		t.Fatalf("expected write success, got %v", err)
+	}
 	if err := decodeJSONBody(rr, &map[string]any{}); err != nil {
 		t.Fatalf("expected decode success, got %v", err)
 	}
 	rr = httptest.NewRecorder()
-	rr.WriteString("not-json")
+	if _, err := rr.WriteString("not-json"); err != nil {
+		t.Fatalf("expected write success, got %v", err)
+	}
 	var dest map[string]any
 	if err := decodeJSONBody(rr, &dest); err == nil {
 		t.Fatalf("expected decode error")

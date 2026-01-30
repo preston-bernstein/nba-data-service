@@ -10,6 +10,7 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 type snapshotKind string
@@ -173,7 +174,7 @@ func (w *Writer) pruneOldSnapshots(kind snapshotKind, dates []string) ([]string,
 	cutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -w.retentionDays)
 	var keep []string
 	for _, d := range dates {
-		parsed, err := time.Parse("2006-01-02", d)
+		parsed, err := timeutil.ParseDate(d)
 		if err != nil {
 			keep = append(keep, d)
 			continue

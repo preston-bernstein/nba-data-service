@@ -1,0 +1,37 @@
+{
+  "date": "2026-01-20",
+  "games": [
+    {
+      "id": "stub-1",
+      "provider": "test",
+      "homeTeam": {
+        "id": "home",
+        "name": "Home",
+        "fullName": "",
+        "abbreviation": "",
+        "city": "",
+        "conference": "",
+        "division": ""
+      },
+      "awayTeam": {
+        "id": "away",
+        "name": "Away",
+        "fullName": "",
+        "abbreviation": "",
+        "city": "",
+        "conference": "",
+        "division": ""
+      },
+      "startTime": "2026-01-20T14:02:52Z",
+      "status": "SCHEDULED",
+      "score": {
+        "home": 0,
+        "away": 0
+      },
+      "meta": {
+        "season": "2023-2024",
+        "upstreamGameId": 1
+      }
+    }
+  ]
+}

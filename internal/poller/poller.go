@@ -6,21 +6,28 @@ import (
 	"sync"
 	"time"
 
-	"github.com/preston-bernstein/nba-data-service/internal/app/games"
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 const defaultInterval = 30 * time.Second
 
-// Poller fetches games on an interval and updates the domain service.
+// SnapshotWriter persists game snapshots to disk.
+type SnapshotWriter interface {
+	WriteGamesSnapshot(date string, snapshot domaingames.TodayResponse) error
+}
+
+// Poller fetches games on an interval and writes today's snapshot to disk.
 type Poller struct {
 	provider providers.GameProvider
-	service  *games.Service
+	writer   SnapshotWriter
 	logger   *slog.Logger
 	metrics  *metrics.Recorder
 	interval time.Duration
+	now      func() time.Time
 
 	ticker   *time.Ticker
 	done     chan struct{}
@@ -49,16 +56,17 @@ func (s Status) IsReady() bool {
 }
 
 // New constructs a Poller with sane defaults.
-func New(provider providers.GameProvider, service *games.Service, logger *slog.Logger, recorder *metrics.Recorder, interval time.Duration) *Poller {
+func New(provider providers.GameProvider, writer SnapshotWriter, logger *slog.Logger, recorder *metrics.Recorder, interval time.Duration) *Poller {
 	if interval <= 0 {
 		interval = defaultInterval
 	}
 	return &Poller{
 		provider: provider,
-		service:  service,
+		writer:   writer,
 		logger:   logger,
 		metrics:  recorder,
 		interval: interval,
+		now:      time.Now,
 		done:     make(chan struct{}),
 	}
 }
@@ -110,7 +118,8 @@ func (p *Poller) Stop(ctx context.Context) error {
 func (p *Poller) fetchOnce(ctx context.Context) {
 	start := time.Now()
 	p.recordAttempt(start)
-	games, err := p.provider.FetchGames(ctx, "", "")
+	today := timeutil.FormatDate(p.now().UTC())
+	games, err := p.provider.FetchGames(ctx, today, "")
 	if p.metrics != nil {
 		p.metrics.RecordPollerCycle(time.Since(start), err)
 	}
@@ -120,7 +129,12 @@ func (p *Poller) fetchOnce(ctx context.Context) {
 		return
 	}
 
-	p.service.ReplaceGames(games)
+	if p.writer != nil {
+		snap := domaingames.NewTodayResponse(today, games)
+		if writeErr := p.writer.WriteGamesSnapshot(today, snap); writeErr != nil {
+			p.logError("poller snapshot write failed", writeErr)
+		}
+	}
 	p.recordSuccess(start)
 	p.logInfo("poller refreshed games",
 		logging.FieldCount, len(games),

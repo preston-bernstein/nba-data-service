@@ -20,6 +20,7 @@ import (
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 	"github.com/preston-bernstein/nba-data-service/internal/providers/balldontlie"
 	"github.com/preston-bernstein/nba-data-service/internal/testutil"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 func TestServerServesHealthAndGames(t *testing.T) {
@@ -27,14 +28,22 @@ func TestServerServesHealthAndGames(t *testing.T) {
 	defer cancel()
 
 	game := testutil.SampleGame("stub-1")
-	game.StartTime = time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	game.StartTime = time.Now().UTC().Format(time.RFC3339)
 
 	provider := &testutil.NotifyingProvider{
 		Games:  []domaingames.Game{game},
 		Notify: make(chan struct{}),
 	}
 
-	cfg := config.Config{PollInterval: 5 * time.Millisecond}
+	// Snapshot folder must exist for poller to write snapshots.
+	snapshotFolder := t.TempDir()
+	cfg := config.Config{
+		PollInterval: 5 * time.Millisecond,
+		Snapshots: config.SnapshotSyncConfig{
+			Enabled:        true,
+			SnapshotFolder: snapshotFolder,
+		},
+	}
 	srv := newServerWithProvider(cfg, nil, provider)
 	srv.poller.Start(ctx)
 
@@ -44,22 +53,23 @@ func TestServerServesHealthAndGames(t *testing.T) {
 		t.Fatal("timed out waiting for poller to fetch")
 	}
 
+	// Wait a brief moment for the snapshot to be written.
+	time.Sleep(20 * time.Millisecond)
+
 	router := srv.Handler()
 
 	healthRec := testutil.Serve(router, http.MethodGet, "/health", nil)
 	testutil.AssertStatus(t, healthRec, http.StatusOK)
 
-	gamesRec := testutil.Serve(router, http.MethodGet, "/games/today", nil)
-	testutil.AssertStatus(t, gamesRec, http.StatusOK)
+	today := timeutil.FormatDate(time.Now().UTC())
+	gameRec := testutil.Serve(router, http.MethodGet, "/games?date="+today, nil)
+	testutil.AssertStatus(t, gameRec, http.StatusOK)
 
-	var today domaingames.TodayResponse
-	testutil.DecodeJSON(t, gamesRec, &today)
+	var got domaingames.TodayResponse
+	testutil.DecodeJSON(t, gameRec, &got)
 
-	if len(today.Games) != 1 {
-		t.Fatalf("expected 1 game, got %d", len(today.Games))
-	}
-	if today.Games[0].ID != "stub-1" {
-		t.Fatalf("unexpected game id %s", today.Games[0].ID)
+	if len(got.Games) != 1 || got.Games[0].ID != "stub-1" {
+		t.Fatalf("unexpected games %+v", got)
 	}
 }
 
@@ -310,24 +320,15 @@ func TestServerHandlesProviderErrorGracefully(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	router := srv.Handler()
-	gamesRec := testutil.Serve(router, http.MethodGet, "/games/today", nil)
-
-	testutil.AssertStatus(t, gamesRec, http.StatusOK)
-
-	var today domaingames.TodayResponse
-	testutil.DecodeJSON(t, gamesRec, &today)
-
-	if len(today.Games) != 0 {
-		t.Fatalf("expected no games when provider errors, got %d", len(today.Games))
-	}
+	gameRec := testutil.Serve(router, http.MethodGet, "/games/unknown", nil)
+	testutil.AssertStatus(t, gameRec, http.StatusNotFound)
 }
 
 func TestGracefulShutdownCallsStopAndShutdown(t *testing.T) {
-	svc := testutil.NewServiceWithGames(nil)
 	p := &testutil.StubPoller{}
 	httpSrv := &testutil.StubHTTPServer{}
 
-	srv := newServerWithDeps(config.Config{}, nil, svc, httpSrv, p)
+	srv := newServerWithDeps(config.Config{}, nil, httpSrv, p)
 	srv.gracefulShutdown()
 
 	if p.StopCalls != 1 {
@@ -339,7 +340,6 @@ func TestGracefulShutdownCallsStopAndShutdown(t *testing.T) {
 }
 
 func TestGracefulShutdownTimesOutLongRunningShutdown(t *testing.T) {
-	svc := testutil.NewServiceWithGames(nil)
 	p := &testutil.StubPoller{}
 
 	blocking := &testutil.BlockingHTTPServer{
@@ -352,7 +352,7 @@ func TestGracefulShutdownTimesOutLongRunningShutdown(t *testing.T) {
 	shutdownTimeout = 5 * time.Millisecond
 	defer func() { shutdownTimeout = original }()
 
-	srv := newServerWithDeps(config.Config{}, nil, svc, blocking, p)
+	srv := newServerWithDeps(config.Config{}, nil, blocking, p)
 
 	start := time.Now()
 	srv.gracefulShutdown()
@@ -370,11 +370,10 @@ func TestGracefulShutdownTimesOutLongRunningShutdown(t *testing.T) {
 }
 
 func TestGracefulShutdownContinuesWhenPollerStopErrors(t *testing.T) {
-	svc := testutil.NewServiceWithGames(nil)
 	p := &testutil.StubPoller{Err: errors.New("stop failure")}
 	httpSrv := &testutil.StubHTTPServer{}
 
-	srv := newServerWithDeps(config.Config{}, nil, svc, httpSrv, p)
+	srv := newServerWithDeps(config.Config{}, nil, httpSrv, p)
 	srv.gracefulShutdown()
 
 	if p.StopCalls != 1 {
@@ -408,12 +407,11 @@ func (p *providerPoller) Provider() providers.GameProvider {
 }
 
 func TestGracefulShutdownClosesRateLimitedProvider(t *testing.T) {
-	svc := testutil.NewServiceWithGames(nil)
 	httpSrv := &testutil.StubHTTPServer{}
 	prov := &closableProvider{}
 	pp := &providerPoller{provider: prov}
 
-	srv := newServerWithDeps(config.Config{}, nil, svc, httpSrv, pp)
+	srv := newServerWithDeps(config.Config{}, nil, httpSrv, pp)
 
 	srv.gracefulShutdown()
 
@@ -426,11 +424,10 @@ func TestGracefulShutdownClosesRateLimitedProvider(t *testing.T) {
 }
 
 func TestPollerProviderReturnsNilWhenUnavailable(t *testing.T) {
-	svc := testutil.NewServiceWithGames(nil)
 	plr := &testutil.StubPoller{}
 	httpSrv := &testutil.StubHTTPServer{}
 
-	srv := newServerWithDeps(config.Config{}, nil, svc, httpSrv, plr)
+	srv := newServerWithDeps(config.Config{}, nil, httpSrv, plr)
 
 	if got := srv.pollerProvider(); got != nil {
 		t.Fatalf("expected nil provider when poller does not expose it")
@@ -568,11 +565,10 @@ func TestNewServerWithMetricsUsesInjectedRecorder(t *testing.T) {
 }
 
 func TestServerStartHandlesListenErrorAndStops(t *testing.T) {
-	svc := testutil.NewServiceWithGames(nil)
 	plr := &testutil.StubPoller{}
 	httpSrv := &testutil.ErrHTTPServer{}
 
-	srv := newServerWithDeps(config.Config{}, nil, svc, httpSrv, plr)
+	srv := newServerWithDeps(config.Config{}, nil, httpSrv, plr)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -594,13 +590,12 @@ func TestServerStartHandlesListenErrorAndStops(t *testing.T) {
 }
 
 func TestStartServerLogsAndStopsOnError(t *testing.T) {
-	svc := testutil.NewServiceWithGames(nil)
 	plr := &testutil.StubPoller{}
 	httpSrv := &testutil.StubHTTPServer{ListenErr: errors.New("boom"), AddrVal: ":0"}
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	srv := newServerWithDeps(config.Config{}, logger, svc, httpSrv, plr)
+	srv := newServerWithDeps(config.Config{}, logger, httpSrv, plr)
 	stopCalled := make(chan struct{}, 1)
 	srv.startServer(func() { stopCalled <- struct{}{} })
 
@@ -618,11 +613,10 @@ func TestRunCancelsAndStopsComponents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	svc := testutil.NewServiceWithGames(nil)
 	plr := &testutil.StubPoller{}
 	httpSrv := &testutil.CloseableHTTPServer{}
 
-	srv := newServerWithDeps(config.Config{}, nil, svc, httpSrv, plr)
+	srv := newServerWithDeps(config.Config{}, nil, httpSrv, plr)
 
 	done := make(chan struct{})
 	go func() {

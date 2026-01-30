@@ -10,6 +10,7 @@ type gamesResponse struct {
 type gameResponse struct {
 	ID               int          `json:"id"`
 	Date             string       `json:"date"`
+	Datetime         string       `json:"datetime"`
 	Status           string       `json:"status"`
 	Time             string       `json:"time"`
 	Period           int          `json:"period"`

@@ -9,13 +9,14 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 func TestWriterWritesSnapshotAndManifest(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWriter(dir, 10)
 
-	today := time.Now().Format("2006-01-02")
+	today := timeutil.FormatDate(time.Now())
 	snap := domaingames.TodayResponse{
 		Date:  today,
 		Games: []domaingames.Game{{ID: "a"}, {ID: "b"}},
@@ -47,7 +48,7 @@ func TestWriterWritesSnapshotAndManifest(t *testing.T) {
 func TestWriteGamesSnapshotSetsDateAndSorts(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWriter(dir, 10000)
-	date := time.Now().UTC().Format("2006-01-02")
+	date := timeutil.FormatDate(time.Now().UTC())
 	gamesSnap := domaingames.TodayResponse{
 		Games: []domaingames.Game{
 			{ID: "b"},
@@ -83,7 +84,7 @@ func TestWriteSnapshotRequiresDateAndWriter(t *testing.T) {
 
 func TestNewWriterDefaultsRetention(t *testing.T) {
 	w := NewWriter(t.TempDir(), 0)
-	date := time.Now().UTC().Format(time.DateOnly)
+	date := timeutil.FormatDate(time.Now().UTC())
 	if err := w.WriteGamesSnapshot(date, domaingames.TodayResponse{Games: []domaingames.Game{{ID: "g1"}}}); err != nil {
 		t.Fatalf("expected snapshot write with default retention, got %v", err)
 	}
@@ -106,8 +107,8 @@ func TestBasePathHandlesNil(t *testing.T) {
 func TestPruneOldSnapshotsRemovesExpiredAndKeepsInvalid(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWriter(dir, 1)
-	old := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
-	recent := time.Now().Format("2006-01-02")
+	old := timeutil.FormatDate(time.Now().AddDate(0, 0, -3))
+	recent := timeutil.FormatDate(time.Now())
 	invalid := "not-a-date"
 
 	writeFile := func(date string) {
