@@ -19,6 +19,7 @@ type Syncer struct {
 	cfg       SyncConfig
 	logger    *slog.Logger
 	now       func() time.Time
+	loc       *time.Location
 	newTicker func(time.Duration) *time.Ticker
 }
 
@@ -32,7 +33,7 @@ type SyncConfig struct {
 }
 
 // NewSyncer constructs a snapshot syncer for games.
-func NewSyncer(provider providers.GameProvider, writer *Writer, cfg SyncConfig, logger *slog.Logger) *Syncer {
+func NewSyncer(provider providers.GameProvider, writer *Writer, cfg SyncConfig, logger *slog.Logger, loc *time.Location) *Syncer {
 	if cfg.Days <= 0 {
 		cfg.Days = 7
 	}
@@ -45,6 +46,9 @@ func NewSyncer(provider providers.GameProvider, writer *Writer, cfg SyncConfig, 
 	if cfg.DailyHourUTC < 0 || cfg.DailyHourUTC > 23 {
 		cfg.DailyHourUTC = 2
 	}
+	if loc == nil {
+		loc = time.UTC
+	}
 
 	return &Syncer{
 		provider:  provider,
@@ -52,6 +56,7 @@ func NewSyncer(provider providers.GameProvider, writer *Writer, cfg SyncConfig, 
 		cfg:       cfg,
 		logger:    logger,
 		now:       time.Now,
+		loc:       loc,
 		newTicker: time.NewTicker,
 	}
 }
@@ -71,7 +76,7 @@ func (s *Syncer) Run(ctx context.Context) {
 		"daily_hour_utc", s.cfg.DailyHourUTC,
 	)
 
-	now := s.now().UTC()
+	now := s.now().In(s.loc)
 	s.backfill(ctx, now)
 	go s.daily(ctx)
 }
@@ -101,7 +106,7 @@ func (s *Syncer) daily(ctx context.Context) {
 			return
 		case now := <-ticker.C:
 			if now.UTC().Hour() == s.cfg.DailyHourUTC {
-				s.backfill(ctx, s.now().UTC())
+				s.backfill(ctx, s.now().In(s.loc))
 			}
 		}
 	}

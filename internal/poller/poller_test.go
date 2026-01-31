@@ -15,14 +15,15 @@ import (
 
 func TestPollerFetchesAndWritesSnapshot(t *testing.T) {
 	g := domaingames.Game{
-		ID:        "poll-game",
-		Provider:  "stub",
-		HomeTeam:  teams.Team{ID: "home", Name: "Home"},
-		AwayTeam:  teams.Team{ID: "away", Name: "Away"},
-		StartTime: time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		Status:    domaingames.StatusScheduled,
-		Score:     domaingames.Score{Home: 0, Away: 0},
-		Meta:      domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 10},
+		ID:         "poll-game",
+		Provider:   "stub",
+		HomeTeam:   teams.Team{ID: "home", Name: "Home"},
+		AwayTeam:   teams.Team{ID: "away", Name: "Away"},
+		StartTime:  time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		Status:     "Scheduled",
+		StatusKind: domaingames.StatusScheduled,
+		Score:      domaingames.Score{Home: 0, Away: 0},
+		Meta:       domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 10},
 	}
 
 	provider := &teststubs.StubProvider{
@@ -32,7 +33,7 @@ func TestPollerFetchesAndWritesSnapshot(t *testing.T) {
 
 	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, writer, nil, nil, 10*time.Millisecond)
+	p := New(provider, writer, nil, nil, 10*time.Millisecond, nil)
 	// Fix the time for deterministic date.
 	p.now = func() time.Time { return time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC) }
 
@@ -74,7 +75,7 @@ func TestPollerStopsOnContextCancel(t *testing.T) {
 
 	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, writer, nil, nil, 5*time.Millisecond)
+	p := New(provider, writer, nil, nil, 5*time.Millisecond, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	p.Start(ctx)
@@ -103,7 +104,7 @@ func TestPollerStopIsIdempotent(t *testing.T) {
 
 	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, writer, nil, nil, time.Hour)
+	p := New(provider, writer, nil, nil, time.Hour, nil)
 
 	if err := p.Stop(context.Background()); err != nil {
 		t.Fatalf("first stop returned error: %v", err)
@@ -120,7 +121,7 @@ func TestPollerStartIsIdempotent(t *testing.T) {
 
 	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, writer, nil, nil, time.Hour)
+	p := New(provider, writer, nil, nil, time.Hour, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -134,7 +135,7 @@ func TestPollerStartIsIdempotent(t *testing.T) {
 }
 
 func TestPollerDefaultsInterval(t *testing.T) {
-	p := New(&teststubs.StubProvider{}, &teststubs.StubSnapshotWriter{}, nil, nil, 0)
+	p := New(&teststubs.StubProvider{}, &teststubs.StubSnapshotWriter{}, nil, nil, 0, nil)
 	if p.interval != defaultInterval {
 		t.Fatalf("expected default interval %s, got %s", defaultInterval, p.interval)
 	}
@@ -142,7 +143,7 @@ func TestPollerDefaultsInterval(t *testing.T) {
 
 func TestPollerStartReturnsWhenAlreadyStarted(t *testing.T) {
 	provider := &teststubs.StubProvider{}
-	p := New(provider, &teststubs.StubSnapshotWriter{}, nil, nil, time.Hour)
+	p := New(provider, &teststubs.StubSnapshotWriter{}, nil, nil, time.Hour, nil)
 	p.started = true
 	p.Start(context.Background())
 	if p.ticker != nil {
@@ -152,7 +153,7 @@ func TestPollerStartReturnsWhenAlreadyStarted(t *testing.T) {
 
 func TestPollerStopTriggersDoneChannel(t *testing.T) {
 	provider := &teststubs.StubProvider{}
-	p := New(provider, &teststubs.StubSnapshotWriter{}, nil, nil, 10*time.Millisecond)
+	p := New(provider, &teststubs.StubSnapshotWriter{}, nil, nil, 10*time.Millisecond, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -173,7 +174,7 @@ func TestPollerStatusTracksFailuresAndSuccess(t *testing.T) {
 
 	writer := &teststubs.StubSnapshotWriter{}
 
-	p := New(provider, writer, nil, nil, time.Millisecond)
+	p := New(provider, writer, nil, nil, time.Millisecond, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -213,7 +214,7 @@ func TestPollerLogsOnErrorAndSuccess(t *testing.T) {
 	writer := &teststubs.StubSnapshotWriter{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 
-	p := New(provider, writer, logger, nil, time.Second)
+	p := New(provider, writer, logger, nil, time.Second, nil)
 	p.fetchOnce(context.Background()) // should log error
 
 	provider.Err = nil
@@ -224,7 +225,7 @@ func TestPollerLogsOnErrorAndSuccess(t *testing.T) {
 func TestPollerProviderExposesWrappedProvider(t *testing.T) {
 	provider := &teststubs.StubProvider{}
 	writer := &teststubs.StubSnapshotWriter{}
-	p := New(provider, writer, nil, nil, time.Minute)
+	p := New(provider, writer, nil, nil, time.Minute, nil)
 
 	if got := p.Provider(); got != provider {
 		t.Fatalf("expected provider returned")
@@ -233,7 +234,7 @@ func TestPollerProviderExposesWrappedProvider(t *testing.T) {
 
 func TestPollerNilWriterDoesNotPanic(t *testing.T) {
 	provider := &teststubs.StubProvider{Games: []domaingames.Game{{ID: "g1"}}}
-	p := New(provider, nil, nil, nil, time.Minute)
+	p := New(provider, nil, nil, nil, time.Minute, nil)
 	p.fetchOnce(context.Background()) // should not panic
 }
 
@@ -242,7 +243,7 @@ func TestPollerWriteErrorLogsButContinues(t *testing.T) {
 	writer := &teststubs.StubSnapshotWriter{Err: errors.New("write failed")}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 
-	p := New(provider, writer, logger, nil, time.Minute)
+	p := New(provider, writer, logger, nil, time.Minute, nil)
 	p.fetchOnce(context.Background())
 
 	// Should still record success even if write fails.
@@ -255,18 +256,19 @@ func BenchmarkPollerFetchOnce(b *testing.B) {
 	provider := &teststubs.StubProvider{
 		Games: []domaingames.Game{
 			{
-				ID:        "bench-game",
-				Provider:  "fixture",
-				HomeTeam:  teams.Team{ID: "home", Name: "Home"},
-				AwayTeam:  teams.Team{ID: "away", Name: "Away"},
-				StartTime: time.Date(2024, 1, 1, 19, 30, 0, 0, time.UTC).Format(time.RFC3339),
-				Status:    domaingames.StatusFinal,
-				Score:     domaingames.Score{Home: 100, Away: 95},
+				ID:         "bench-game",
+				Provider:   "fixture",
+				HomeTeam:   teams.Team{ID: "home", Name: "Home"},
+				AwayTeam:   teams.Team{ID: "away", Name: "Away"},
+				StartTime:  time.Date(2024, 1, 1, 19, 30, 0, 0, time.UTC).Format(time.RFC3339),
+				Status:     "Final",
+				StatusKind: domaingames.StatusFinal,
+				Score:      domaingames.Score{Home: 100, Away: 95},
 			},
 		},
 	}
 	writer := &teststubs.StubSnapshotWriter{}
-	p := New(provider, writer, nil, nil, time.Second)
+	p := New(provider, writer, nil, nil, time.Second, nil)
 	ctx := context.Background()
 
 	b.ReportAllocs()

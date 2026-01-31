@@ -150,12 +150,12 @@ func fetchPaged[T any](
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil, classifyErrorResponse(resp, body, now())
 		}
 
 		data, totalPages, err := decode(json.NewDecoder(resp.Body))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}

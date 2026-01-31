@@ -22,3 +22,24 @@ func TestFormatDateUsesLocation(t *testing.T) {
 		t.Fatalf("expected formatted date, got %s", got)
 	}
 }
+
+func TestResolveLocationEmptyUsesUTC(t *testing.T) {
+	loc := ResolveLocation("")
+	if loc != time.UTC {
+		t.Fatalf("expected UTC fallback, got %v", loc)
+	}
+}
+
+func TestResolveLocationValidName(t *testing.T) {
+	loc := ResolveLocation("America/Chicago")
+	if loc.String() != "America/Chicago" {
+		t.Fatalf("expected location to load, got %v", loc)
+	}
+}
+
+func TestResolveLocationInvalidNameFallsBackToUTC(t *testing.T) {
+	loc := ResolveLocation("Not/AZone")
+	if loc != time.UTC {
+		t.Fatalf("expected UTC fallback, got %v", loc)
+	}
+}

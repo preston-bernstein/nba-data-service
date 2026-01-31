@@ -159,13 +159,15 @@ components:
           format: date-time
         status:
           type: string
+        statusKind:
+          type: string
           enum: [SCHEDULED, IN_PROGRESS, FINAL, POSTPONED, CANCELED]
         score:
           $ref: "#/components/schemas/Score"
         meta:
           $ref: "#/components/schemas/GameMeta"
       required:
-        [id, provider, homeTeam, awayTeam, startTime, status, score, meta]
+        [id, provider, homeTeam, awayTeam, startTime, status, statusKind, score, meta]
     Team:
       type: object
       properties:

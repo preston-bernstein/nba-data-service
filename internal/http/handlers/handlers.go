@@ -23,15 +23,20 @@ type Handler struct {
 	logger   *slog.Logger
 	now      nowFunc
 	statusFn func() poller.Status
+	loc      *time.Location
 }
 
 // NewHandler constructs a Handler with defaults.
-func NewHandler(snaps snapshots.Store, logger *slog.Logger, statusFn func() poller.Status) *Handler {
+func NewHandler(snaps snapshots.Store, logger *slog.Logger, statusFn func() poller.Status, loc *time.Location) *Handler {
+	if loc == nil {
+		loc = time.UTC
+	}
 	return &Handler{
 		snaps:    snaps,
 		logger:   logger,
 		now:      time.Now,
 		statusFn: statusFn,
+		loc:      loc,
 	}
 }
 
@@ -93,18 +98,17 @@ func (h *Handler) GamesToday(w nethttp.ResponseWriter, r *nethttp.Request) {
 		writeError(w, r, nethttp.StatusBadRequest, "date query param required (expected YYYY-MM-DD)", h.logger)
 		return
 	}
-	now := h.now().UTC()
+	now := h.now().In(h.loc)
 	logger := loggerFromContext(r, h.logger)
 
-	parsed, err := timeutil.ParseDate(dateParam)
+	_, err := timeutil.ParseDate(dateParam)
 	if err != nil {
 		writeError(w, r, nethttp.StatusBadRequest, "invalid date format (expected YYYY-MM-DD)", h.logger)
 		return
 	}
-	today := now.Truncate(24 * time.Hour)
-	minDate := today.AddDate(0, 0, -7)
-	maxDate := today.AddDate(0, 0, 7)
-	if parsed.Before(minDate) || parsed.After(maxDate) {
+	minDate := timeutil.FormatDate(now.AddDate(0, 0, -7))
+	maxDate := timeutil.FormatDate(now.AddDate(0, 0, 7))
+	if dateParam < minDate || dateParam > maxDate {
 		writeError(w, r, nethttp.StatusBadRequest, "date must be within 7 days of today", h.logger)
 		return
 	}
@@ -145,7 +149,7 @@ func (h *Handler) GameByID(w nethttp.ResponseWriter, r *nethttp.Request) {
 		writeError(w, r, nethttp.StatusBadGateway, "snapshot store not configured", h.logger)
 		return
 	}
-	today := timeutil.FormatDate(h.now().UTC())
+	today := timeutil.FormatDate(h.now().In(h.loc))
 	game, ok := h.snaps.FindGameByID(today, id)
 	if !ok {
 		writeError(w, r, nethttp.StatusNotFound, "game not found", h.logger)

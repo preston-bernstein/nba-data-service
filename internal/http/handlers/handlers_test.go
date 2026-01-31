@@ -20,7 +20,7 @@ import (
 )
 
 func newHandler(snaps snapshots.Store, statusFn func() poller.Status) *Handler {
-	return NewHandler(snaps, nil, statusFn)
+	return NewHandler(snaps, nil, statusFn, nil)
 }
 
 func storeWithResponse(date string, resp domaingames.TodayResponse) *teststubs.StubSnapshotStore {
@@ -154,7 +154,7 @@ func TestGamesByDateWithLoggerLogsSnapshot(t *testing.T) {
 	logger, buf := testutil.NewBufferLogger()
 	date := "2024-07-01"
 	snaps := storeWithResponse(date, testutil.SampleTodayResponse(date, "logged-snap"))
-	h := NewHandler(snaps, logger, nil)
+	h := NewHandler(snaps, logger, nil, nil)
 	h.now = func() time.Time { return time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC) }
 	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-07-01", nil)
 	testutil.AssertStatus(t, rr, http.StatusOK)
@@ -243,7 +243,7 @@ func TestGameByIDRejectsGamesKeyword(t *testing.T) {
 }
 
 func TestGameByIDNilSnapshotStore(t *testing.T) {
-	h := NewHandler(nil, nil, nil)
+	h := NewHandler(nil, nil, nil, nil)
 	rr := testutil.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games/id-1", nil)
 	testutil.AssertStatus(t, rr, http.StatusBadGateway)
 }
@@ -370,7 +370,7 @@ func TestServeHTTPRoutes(t *testing.T) {
 	game := testutil.SampleGame("id-1")
 	game.StartTime = time.Now().Format(time.RFC3339)
 	snaps := storeWithGames(date, []domaingames.Game{game})
-	h := NewHandler(snaps, nil, func() poller.Status { return poller.Status{LastSuccess: time.Now()} })
+	h := NewHandler(snaps, nil, func() poller.Status { return poller.Status{LastSuccess: time.Now()} }, nil)
 	h.now = func() time.Time { return time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC) }
 
 	tests := []struct {
@@ -463,20 +463,21 @@ func BenchmarkGamesByDate(b *testing.B) {
 		Date: "2024-01-02",
 		Games: []domaingames.Game{
 			{
-				ID:        "game-1",
-				Provider:  "test",
-				HomeTeam:  teams.Team{ID: "home", Name: "Home"},
-				AwayTeam:  teams.Team{ID: "away", Name: "Away"},
-				StartTime: now.Format(time.RFC3339),
-				Status:    domaingames.StatusScheduled,
-				Score:     domaingames.Score{Home: 0, Away: 0},
-				Meta:      domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 123},
+				ID:         "game-1",
+				Provider:   "test",
+				HomeTeam:   teams.Team{ID: "home", Name: "Home"},
+				AwayTeam:   teams.Team{ID: "away", Name: "Away"},
+				StartTime:  now.Format(time.RFC3339),
+				Status:     "Scheduled",
+				StatusKind: domaingames.StatusScheduled,
+				Score:      domaingames.Score{Home: 0, Away: 0},
+				Meta:       domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 123},
 			},
 		},
 	}); err != nil {
 		b.Fatalf("failed to write snapshot: %v", err)
 	}
-	h := NewHandler(snapshots.NewFSStore(basePath), nil, nil)
+	h := NewHandler(snapshots.NewFSStore(basePath), nil, nil, nil)
 	h.now = func() time.Time { return now }
 
 	b.ResetTimer()
@@ -495,20 +496,21 @@ func BenchmarkGameByID(b *testing.B) {
 		Date: "2024-01-02",
 		Games: []domaingames.Game{
 			{
-				ID:        "game-1",
-				Provider:  "test",
-				HomeTeam:  teams.Team{ID: "home", Name: "Home"},
-				AwayTeam:  teams.Team{ID: "away", Name: "Away"},
-				StartTime: now.Format(time.RFC3339),
-				Status:    domaingames.StatusScheduled,
-				Score:     domaingames.Score{Home: 0, Away: 0},
-				Meta:      domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 123},
+				ID:         "game-1",
+				Provider:   "test",
+				HomeTeam:   teams.Team{ID: "home", Name: "Home"},
+				AwayTeam:   teams.Team{ID: "away", Name: "Away"},
+				StartTime:  now.Format(time.RFC3339),
+				Status:     "Scheduled",
+				StatusKind: domaingames.StatusScheduled,
+				Score:      domaingames.Score{Home: 0, Away: 0},
+				Meta:       domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 123},
 			},
 		},
 	}); err != nil {
 		b.Fatalf("failed to write snapshot: %v", err)
 	}
-	h := NewHandler(snapshots.NewFSStore(basePath), nil, nil)
+	h := NewHandler(snapshots.NewFSStore(basePath), nil, nil, nil)
 	h.now = func() time.Time { return now }
 
 	b.ResetTimer()

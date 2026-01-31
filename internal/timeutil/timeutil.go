@@ -14,3 +14,14 @@ func ParseDate(value string) (time.Time, error) {
 func FormatDate(t time.Time) string {
 	return t.Format(DateLayout)
 }
+
+// ResolveLocation loads an IANA timezone name or falls back to UTC.
+func ResolveLocation(name string) *time.Location {
+	if name == "" {
+		return time.UTC
+	}
+	if loc, err := time.LoadLocation(name); err == nil {
+		return loc
+	}
+	return time.UTC
+}
