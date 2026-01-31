@@ -13,6 +13,7 @@ import (
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/poller"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 var metricsSetup = metrics.Setup
@@ -46,9 +47,10 @@ func newServerWithMetrics(cfg config.Config, logger *slog.Logger, provider provi
 	} else {
 		provider = providers.NewRetryingProvider(provider, logger, recorder, normalizeProviderName(cfg.Provider, provider), 0, 0)
 	}
-	snaps := buildSnapshots(cfg, provider, logger)
-	plr := poller.New(provider, snaps.writer, logger, recorder, cfg.PollInterval)
-	httpSrv := buildHTTPServer(cfg, logger, provider, recorder, plr, snaps)
+	loc := timeutil.ResolveLocation(cfg.Balldontlie.Timezone)
+	snaps := buildSnapshots(cfg, provider, logger, loc)
+	plr := poller.New(provider, snaps.writer, logger, recorder, cfg.PollInterval, loc)
+	httpSrv := buildHTTPServer(cfg, logger, provider, recorder, plr, snaps, loc)
 
 	return &Server{
 		cfg:           cfg,
@@ -71,13 +73,13 @@ func newServerWithDeps(cfg config.Config, logger *slog.Logger, httpSrv httpServe
 	}
 }
 
-func buildHTTPServer(cfg config.Config, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder, plr Poller, snaps snapshotComponents) httpServer {
+func buildHTTPServer(cfg config.Config, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder, plr Poller, snaps snapshotComponents, loc *time.Location) httpServer {
 	var statusFn func() poller.Status
 	if plr != nil {
 		statusFn = plr.Status
 	}
 
-	handler := handlers.NewHandler(snaps.store, logger, statusFn)
+	handler := handlers.NewHandler(snaps.store, logger, statusFn, loc)
 	admin := handlers.NewAdminHandler(snaps.writer, provider, cfg.Snapshots.AdminToken, logger)
 	router := httpserver.NewRouter(handler)
 	// Optionally mount admin refresh endpoint if token is set.
