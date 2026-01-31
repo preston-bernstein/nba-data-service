@@ -27,7 +27,7 @@ func TestLoggingMiddlewareSetsRequestIDAndRecordsMetrics(t *testing.T) {
 	})
 
 	handler := LoggingMiddleware(logger, rec, next)
-	rr := testutil.Serve(handler, http.MethodGet, "/games/today", nil)
+	rr := testutil.Serve(handler, http.MethodGet, "/games?date=2024-01-01", nil)
 
 	if !nextCalled {
 		t.Fatalf("expected next handler to be called")
@@ -52,7 +52,7 @@ func TestLoggingMiddlewareGeneratesRequestIDWhenMissing(t *testing.T) {
 	})
 
 	handler := LoggingMiddleware(logger, rec, next)
-	rr := testutil.Serve(handler, http.MethodGet, "/games/today?foo=bar", nil)
+	rr := testutil.Serve(handler, http.MethodGet, "/games?date=2024-01-01&foo=bar", nil)
 
 	testutil.AssertStatus(t, rr, http.StatusOK)
 	if got := rr.Header().Get("X-Request-ID"); got == "" {
@@ -68,7 +68,7 @@ func TestLoggingMiddlewareUsesForwardedFor(t *testing.T) {
 	})
 
 	handler := LoggingMiddleware(logger, rec, next)
-	req := httptest.NewRequest(http.MethodGet, "/games/today", nil)
+	req := httptest.NewRequest(http.MethodGet, "/games?date=2024-01-01", nil)
 	req.Header.Set("X-Forwarded-For", "198.51.100.1")
 	rr := testutil.ServeRequest(handler, req)
 
@@ -99,8 +99,7 @@ func TestNormalizePath(t *testing.T) {
 		in   string
 		want string
 	}{
-		{in: "/games", want: "/games/today"},
-		{in: "/games/today", want: "/games/today"},
+		{in: "/games", want: "/games"},
 		{in: "/games/123", want: "/games/:id"},
 		{in: "/health", want: "/health"},
 		{in: "/ready", want: "/ready"},
@@ -126,8 +125,8 @@ func TestRequestIDHelpers(t *testing.T) {
 }
 
 func TestRequestIDFromContextEmpty(t *testing.T) {
-	if got := RequestIDFromContext(nil); got != "" {
-		t.Fatalf("expected empty id for nil context, got %s", got)
+	if got := RequestIDFromContext(context.TODO()); got != "" {
+		t.Fatalf("expected empty id for empty context, got %s", got)
 	}
 }
 
@@ -144,7 +143,7 @@ func BenchmarkLoggingMiddleware(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/games/today", nil)
+		req := httptest.NewRequest(http.MethodGet, "/games?date=2024-01-01", nil)
 		handler.ServeHTTP(rr, req)
 	}
 }

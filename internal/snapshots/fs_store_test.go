@@ -45,17 +45,41 @@ func TestFSStoreErrors(t *testing.T) {
 	}
 }
 
-func TestDecodeFileError(t *testing.T) {
+func TestFSStoreFindGameByID(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "games", "bad.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("failed to create dir: %v", err)
+	if err := os.MkdirAll(filepath.Join(dir, "games"), 0o755); err != nil {
+		t.Fatalf("failed to create games dir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("{bad json"), 0o644); err != nil {
-		t.Fatalf("failed to write file: %v", err)
+
+	snap := domaingames.TodayResponse{
+		Date:  "2024-01-15",
+		Games: []domaingames.Game{{ID: "game-1"}, {ID: "game-2"}},
 	}
+	data, _ := json.Marshal(snap)
+	if err := os.WriteFile(filepath.Join(dir, "games", "2024-01-15.json"), data, 0o644); err != nil {
+		t.Fatalf("failed to write snapshot: %v", err)
+	}
+
 	store := NewFSStore(dir)
-	if err := store.decodeFile(path, &domaingames.TodayResponse{}); err == nil {
-		t.Fatalf("expected decode error")
+
+	// Found case.
+	g, ok := store.FindGameByID("2024-01-15", "game-2")
+	if !ok {
+		t.Fatalf("expected to find game-2")
+	}
+	if g.ID != "game-2" {
+		t.Fatalf("unexpected game: %+v", g)
+	}
+
+	// Not found case.
+	_, ok = store.FindGameByID("2024-01-15", "missing")
+	if ok {
+		t.Fatalf("expected not to find missing game")
+	}
+
+	// Missing snapshot case.
+	_, ok = store.FindGameByID("2024-01-01", "game-1")
+	if ok {
+		t.Fatalf("expected not to find game in missing snapshot")
 	}
 }

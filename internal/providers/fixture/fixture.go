@@ -6,6 +6,7 @@ import (
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 // Provider returns a static set of games useful for local testing and bootstrapping.
@@ -27,7 +28,7 @@ func (p *Provider) FetchGames(ctx context.Context, date string, tz string) ([]do
 
 	start := p.now().UTC().Truncate(time.Hour)
 	if date != "" {
-		parsed, err := time.Parse("2006-01-02", date)
+		parsed, err := timeutil.ParseDate(date)
 		if err == nil {
 			start = parsed.UTC()
 		}

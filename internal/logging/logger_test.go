@@ -1,8 +1,11 @@
 package logging
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -81,7 +84,27 @@ func TestParseLevelFallsBackOnUnknown(t *testing.T) {
 
 func TestFromContextHandlesNilContext(t *testing.T) {
 	logger := slog.Default()
-	if got := FromContext(nil, logger); got != logger {
-		t.Fatalf("expected fallback logger for nil context")
+	if got := FromContext(context.TODO(), logger); got != logger {
+		t.Fatalf("expected fallback logger for empty context")
 	}
+}
+
+func TestHelpersHandleNilAndLogger(t *testing.T) {
+	Info(nil, "noop")
+	Warn(nil, "noop")
+	Error(nil, "noop", nil)
+
+	logger, buf := newBufferLogger()
+	Info(logger, "info")
+	Warn(logger, "warn")
+	Error(logger, "error", errors.New("boom"))
+	if !strings.Contains(buf.String(), "warn") {
+		t.Fatalf("expected warn entry in buffer")
+	}
+}
+
+func newBufferLogger() (*slog.Logger, *bytes.Buffer) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	return logger, &buf
 }
