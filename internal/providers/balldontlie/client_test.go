@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 )
 
@@ -121,8 +122,11 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 	if game.Score.Home != 110 || game.Score.Away != 102 {
 		t.Fatalf("unexpected scores %+v", game.Score)
 	}
-	if game.Status != "FINAL" {
+	if game.Status != "Final" {
 		t.Fatalf("unexpected status %s", game.Status)
+	}
+	if game.StatusKind != domaingames.StatusFinal {
+		t.Fatalf("unexpected status kind %s", game.StatusKind)
 	}
 	if game.Meta.UpstreamGameID != 10 || game.Meta.Season != "2023" {
 		t.Fatalf("unexpected meta %+v", game.Meta)

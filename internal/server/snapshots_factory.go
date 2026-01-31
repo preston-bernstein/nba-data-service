@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/preston-bernstein/nba-data-service/internal/config"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
@@ -15,7 +16,7 @@ type snapshotComponents struct {
 	syncer *snapshots.Syncer
 }
 
-func buildSnapshots(cfg config.Config, provider providers.GameProvider, logger *slog.Logger) snapshotComponents {
+func buildSnapshots(cfg config.Config, provider providers.GameProvider, logger *slog.Logger, loc *time.Location) snapshotComponents {
 	basePath := cfg.Snapshots.SnapshotFolder
 	writer := snapshots.NewWriter(basePath, cfg.Snapshots.RetentionDays)
 	store := snapshots.NewFSStore(basePath)
@@ -26,7 +27,7 @@ func buildSnapshots(cfg config.Config, provider providers.GameProvider, logger *
 		FutureDays:   cfg.Snapshots.FutureDays,
 		Interval:     cfg.Snapshots.Interval,
 		DailyHourUTC: cfg.Snapshots.DailyHourUTC,
-	}, logger)
+	}, logger, loc)
 	if cfg.Snapshots.Enabled {
 		go syncer.Run(context.Background())
 	}

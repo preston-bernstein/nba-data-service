@@ -8,13 +8,14 @@ import (
 // SampleGame returns a minimal game fixture with the provided id.
 func SampleGame(id string) domaingames.Game {
 	return domaingames.Game{
-		ID:       id,
-		Provider: "test",
-		HomeTeam: teams.Team{ID: "home", Name: "Home"},
-		AwayTeam: teams.Team{ID: "away", Name: "Away"},
-		Status:   domaingames.StatusScheduled,
-		Score:    domaingames.Score{Home: 0, Away: 0},
-		Meta:     domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 1},
+		ID:         id,
+		Provider:   "test",
+		HomeTeam:   teams.Team{ID: "home", Name: "Home"},
+		AwayTeam:   teams.Team{ID: "away", Name: "Away"},
+		Status:     "Scheduled",
+		StatusKind: domaingames.StatusScheduled,
+		Score:      domaingames.Score{Home: 0, Away: 0},
+		Meta:       domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 1},
 	}
 }
 

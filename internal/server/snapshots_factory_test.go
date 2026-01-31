@@ -17,7 +17,7 @@ func TestBuildSnapshotsRespectsConfig(t *testing.T) {
 		},
 	}
 	prov := fixture.New()
-	components := buildSnapshots(cfg, prov, nil)
+	components := buildSnapshots(cfg, prov, nil, nil)
 	if components.store == nil || components.writer == nil || components.syncer == nil {
 		t.Fatalf("expected snapshots components to be initialized")
 	}
