@@ -15,14 +15,15 @@ import (
 
 func TestPollerFetchesAndWritesSnapshot(t *testing.T) {
 	g := domaingames.Game{
-		ID:        "poll-game",
-		Provider:  "stub",
-		HomeTeam:  teams.Team{ID: "home", Name: "Home"},
-		AwayTeam:  teams.Team{ID: "away", Name: "Away"},
-		StartTime: time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		Status:    domaingames.StatusScheduled,
-		Score:     domaingames.Score{Home: 0, Away: 0},
-		Meta:      domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 10},
+		ID:         "poll-game",
+		Provider:   "stub",
+		HomeTeam:   teams.Team{ID: "home", Name: "Home"},
+		AwayTeam:   teams.Team{ID: "away", Name: "Away"},
+		StartTime:  time.Date(2024, 1, 1, 15, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		Status:     "Scheduled",
+		StatusKind: domaingames.StatusScheduled,
+		Score:      domaingames.Score{Home: 0, Away: 0},
+		Meta:       domaingames.GameMeta{Season: "2023-2024", UpstreamGameID: 10},
 	}
 
 	provider := &teststubs.StubProvider{
@@ -255,13 +256,14 @@ func BenchmarkPollerFetchOnce(b *testing.B) {
 	provider := &teststubs.StubProvider{
 		Games: []domaingames.Game{
 			{
-				ID:        "bench-game",
-				Provider:  "fixture",
-				HomeTeam:  teams.Team{ID: "home", Name: "Home"},
-				AwayTeam:  teams.Team{ID: "away", Name: "Away"},
-				StartTime: time.Date(2024, 1, 1, 19, 30, 0, 0, time.UTC).Format(time.RFC3339),
-				Status:    domaingames.StatusFinal,
-				Score:     domaingames.Score{Home: 100, Away: 95},
+				ID:         "bench-game",
+				Provider:   "fixture",
+				HomeTeam:   teams.Team{ID: "home", Name: "Home"},
+				AwayTeam:   teams.Team{ID: "away", Name: "Away"},
+				StartTime:  time.Date(2024, 1, 1, 19, 30, 0, 0, time.UTC).Format(time.RFC3339),
+				Status:     "Final",
+				StatusKind: domaingames.StatusFinal,
+				Score:      domaingames.Score{Home: 100, Away: 95},
 			},
 		},
 	}
