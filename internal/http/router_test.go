@@ -12,7 +12,7 @@ import (
 
 func TestRouterRoutesKnownPaths(t *testing.T) {
 	snaps := &teststubs.StubSnapshotStore{}
-	h := handlers.NewHandler(snaps, nil, nil)
+	h := handlers.NewHandler(snaps, nil, nil, nil)
 
 	router := NewRouter(h)
 
@@ -31,7 +31,7 @@ func TestRouterRoutesKnownPaths(t *testing.T) {
 
 func TestRouterUnknownRouteReturns404(t *testing.T) {
 	snaps := &teststubs.StubSnapshotStore{}
-	h := handlers.NewHandler(snaps, nil, nil)
+	h := handlers.NewHandler(snaps, nil, nil, nil)
 
 	router := NewRouter(h)
 

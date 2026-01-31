@@ -28,6 +28,7 @@ type Poller struct {
 	metrics  *metrics.Recorder
 	interval time.Duration
 	now      func() time.Time
+	loc      *time.Location
 
 	ticker   *time.Ticker
 	done     chan struct{}
@@ -56,9 +57,12 @@ func (s Status) IsReady() bool {
 }
 
 // New constructs a Poller with sane defaults.
-func New(provider providers.GameProvider, writer SnapshotWriter, logger *slog.Logger, recorder *metrics.Recorder, interval time.Duration) *Poller {
+func New(provider providers.GameProvider, writer SnapshotWriter, logger *slog.Logger, recorder *metrics.Recorder, interval time.Duration, loc *time.Location) *Poller {
 	if interval <= 0 {
 		interval = defaultInterval
+	}
+	if loc == nil {
+		loc = time.UTC
 	}
 	return &Poller{
 		provider: provider,
@@ -67,6 +71,7 @@ func New(provider providers.GameProvider, writer SnapshotWriter, logger *slog.Lo
 		metrics:  recorder,
 		interval: interval,
 		now:      time.Now,
+		loc:      loc,
 		done:     make(chan struct{}),
 	}
 }
@@ -118,7 +123,7 @@ func (p *Poller) Stop(ctx context.Context) error {
 func (p *Poller) fetchOnce(ctx context.Context) {
 	start := time.Now()
 	p.recordAttempt(start)
-	today := timeutil.FormatDate(p.now().UTC())
+	today := timeutil.FormatDate(p.now().In(p.loc))
 	games, err := p.provider.FetchGames(ctx, today, "")
 	if p.metrics != nil {
 		p.metrics.RecordPollerCycle(time.Since(start), err)

@@ -28,8 +28,11 @@ func TestMapGameTransformsFields(t *testing.T) {
 	if game.ID != "balldontlie-42" || game.Provider != "balldontlie" {
 		t.Fatalf("unexpected id/provider: %+v", game)
 	}
-	if game.Status != games.StatusInProgress {
-		t.Fatalf("expected in progress status, got %s", game.Status)
+	if game.Status != "In Progress" {
+		t.Fatalf("expected raw status, got %s", game.Status)
+	}
+	if game.StatusKind != games.StatusInProgress {
+		t.Fatalf("expected in progress status kind, got %s", game.StatusKind)
 	}
 	if game.Score.Home != 55 || game.Score.Away != 50 {
 		t.Fatalf("unexpected scores %+v", game.Score)
@@ -48,8 +51,8 @@ func TestMapGameTransformsFields(t *testing.T) {
 	}
 }
 
-func TestMapStatusCoversVariants(t *testing.T) {
-	cases := map[string]games.GameStatus{
+func TestMapStatusKindCoversVariants(t *testing.T) {
+	cases := map[string]games.GameStatusKind{
 		"Final":       games.StatusFinal,
 		"In Progress": games.StatusInProgress,
 		"Postponed":   games.StatusPostponed,
@@ -58,7 +61,7 @@ func TestMapStatusCoversVariants(t *testing.T) {
 	}
 
 	for input, expected := range cases {
-		if got := mapStatus(input); got != expected {
+		if got := mapStatusKind(input); got != expected {
 			t.Fatalf("status %s expected %s, got %s", input, expected, got)
 		}
 	}

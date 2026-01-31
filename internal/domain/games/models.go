@@ -2,15 +2,15 @@ package games
 
 import "github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 
-// GameStatus mirrors the shared contract for game lifecycle states.
-type GameStatus string
+// GameStatusKind normalizes provider status into a small enum.
+type GameStatusKind string
 
 const (
-	StatusScheduled  GameStatus = "SCHEDULED"
-	StatusInProgress GameStatus = "IN_PROGRESS"
-	StatusFinal      GameStatus = "FINAL"
-	StatusPostponed  GameStatus = "POSTPONED"
-	StatusCanceled   GameStatus = "CANCELED"
+	StatusScheduled  GameStatusKind = "SCHEDULED"
+	StatusInProgress GameStatusKind = "IN_PROGRESS"
+	StatusFinal      GameStatusKind = "FINAL"
+	StatusPostponed  GameStatusKind = "POSTPONED"
+	StatusCanceled   GameStatusKind = "CANCELED"
 )
 
 // Score captures home and away points.
@@ -30,14 +30,15 @@ type GameMeta struct {
 
 // Game is the canonical game shape exposed by the service.
 type Game struct {
-	ID        string     `json:"id"`
-	Provider  string     `json:"provider"`
-	HomeTeam  teams.Team `json:"homeTeam"`
-	AwayTeam  teams.Team `json:"awayTeam"`
-	StartTime string     `json:"startTime"`
-	Status    GameStatus `json:"status"`
-	Score     Score      `json:"score"`
-	Meta      GameMeta   `json:"meta"`
+	ID         string         `json:"id"`
+	Provider   string         `json:"provider"`
+	HomeTeam   teams.Team     `json:"homeTeam"`
+	AwayTeam   teams.Team     `json:"awayTeam"`
+	StartTime  string         `json:"startTime"`
+	Status     string         `json:"status"`
+	StatusKind GameStatusKind `json:"statusKind"`
+	Score      Score          `json:"score"`
+	Meta       GameMeta       `json:"meta"`
 }
 
 // TodayResponse is the payload returned by /games?date=YYYY-MM-DD.
