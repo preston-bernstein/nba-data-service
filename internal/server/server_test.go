@@ -25,7 +25,6 @@ import (
 
 func TestServerServesHealthAndGames(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	game := testutil.SampleGame("stub-1")
 	game.StartTime = time.Now().UTC().Format(time.RFC3339)
@@ -46,6 +45,12 @@ func TestServerServesHealthAndGames(t *testing.T) {
 	}
 	srv := newServerWithProvider(cfg, nil, provider)
 	srv.poller.Start(ctx)
+
+	// Stop the poller before TempDir cleanup to avoid snapshot-write races.
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.poller.Stop(context.Background())
+	})
 
 	select {
 	case <-provider.Notify:
