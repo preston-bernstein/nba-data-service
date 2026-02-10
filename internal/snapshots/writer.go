@@ -53,6 +53,48 @@ func (w *Writer) BasePath() string {
 	return w.basePath
 }
 
+// DeleteAllGamesSnapshots removes every games snapshot file and clears the manifest.
+// Use at the start of a backfill so the full window is re-fetched (no stale data).
+func (w *Writer) DeleteAllGamesSnapshots() error {
+	if w == nil {
+		return fmt.Errorf("snapshot writer not configured")
+	}
+	dates, err := w.listDates(kindGames)
+	if err != nil {
+		return err
+	}
+	for _, d := range dates {
+		path := w.snapshotPath(kindGames, d, 0)
+		_ = os.Remove(path)
+	}
+	m, _ := readManifest(filepath.Join(w.basePath, "manifest.json"), w.retentionDays)
+	m.Games.Dates = nil
+	m.Games.LastRefreshed = time.Now().UTC()
+	m.Retention.GamesDays = w.retentionDays
+	return writeManifest(w.basePath, m)
+}
+
+// PruneExpiredGamesSnapshots removes snapshot files older than retention and updates the manifest.
+// Call at the start of a sync so stale snapshots are removed even if no writes occur.
+func (w *Writer) PruneExpiredGamesSnapshots() error {
+	if w == nil {
+		return fmt.Errorf("snapshot writer not configured")
+	}
+	dates, err := w.listDates(kindGames)
+	if err != nil {
+		return err
+	}
+	pruned, err := w.pruneOldSnapshots(kindGames, dates)
+	if err != nil {
+		return err
+	}
+	m, _ := readManifest(filepath.Join(w.basePath, "manifest.json"), w.retentionDays)
+	m.Games.Dates = pruned
+	m.Games.LastRefreshed = time.Now().UTC()
+	m.Retention.GamesDays = w.retentionDays
+	return writeManifest(w.basePath, m)
+}
+
 // WriteGamesSnapshot writes the games snapshot for the given date (YYYY-MM-DD) and prunes old snapshots.
 func (w *Writer) WriteGamesSnapshot(date string, snapshot domaingames.TodayResponse) error {
 	if snapshot.Date == "" {

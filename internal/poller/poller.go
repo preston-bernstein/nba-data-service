@@ -32,6 +32,7 @@ type Poller struct {
 
 	ticker   *time.Ticker
 	done     chan struct{}
+	stopped  chan struct{}
 	stopOnce sync.Once
 	startMu  sync.Mutex
 	started  bool
@@ -73,6 +74,7 @@ func New(provider providers.GameProvider, writer SnapshotWriter, logger *slog.Lo
 		now:      time.Now,
 		loc:      loc,
 		done:     make(chan struct{}),
+		stopped:  make(chan struct{}),
 	}
 }
 
@@ -89,6 +91,7 @@ func (p *Poller) Start(ctx context.Context) {
 	p.ticker = time.NewTicker(p.interval)
 
 	go func() {
+		defer close(p.stopped)
 		p.logInfo("poller started", slog.Int64(logging.FieldDurationMS, p.interval.Milliseconds()))
 		// Initial fetch to warm data on boot.
 		p.fetchOnce(ctx)
@@ -112,19 +115,36 @@ func (p *Poller) Start(ctx context.Context) {
 
 // Stop halts the polling loop.
 func (p *Poller) Stop(ctx context.Context) error {
-	_ = ctx
 	p.stopOnce.Do(func() {
 		close(p.done)
 		p.stopTicker()
 	})
-	return nil
+	if ctx == nil {
+		return nil
+	}
+	p.startMu.Lock()
+	started := p.started
+	p.startMu.Unlock()
+	if !started {
+		return nil
+	}
+	select {
+	case <-p.stopped:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (p *Poller) fetchOnce(ctx context.Context) {
 	start := time.Now()
 	p.recordAttempt(start)
-	today := timeutil.FormatDate(p.now().In(p.loc))
-	games, err := p.provider.FetchGames(ctx, today, "")
+	nowInLoc := p.now().In(p.loc)
+	today := timeutil.FormatDate(nowInLoc)
+	yesterday := timeutil.FormatDate(nowInLoc.AddDate(0, 0, -1))
+
+	// Fetch and write today (primary); poller health is based on today.
+	todayGames, err := p.provider.FetchGames(ctx, today, "")
 	if p.metrics != nil {
 		p.metrics.RecordPollerCycle(time.Since(start), err)
 	}
@@ -135,14 +155,29 @@ func (p *Poller) fetchOnce(ctx context.Context) {
 	}
 
 	if p.writer != nil {
-		snap := domaingames.NewTodayResponse(today, games)
+		snap := domaingames.NewTodayResponse(today, todayGames)
 		if writeErr := p.writer.WriteGamesSnapshot(today, snap); writeErr != nil {
 			p.logError("poller snapshot write failed", writeErr)
 		}
 	}
+
+	// Also fetch and write yesterday so games that span midnight (e.g. 11pm–1am)
+	// keep updating the previous day's snapshot until they finish.
+	if p.writer != nil {
+		yesterdayGames, errYesterday := p.provider.FetchGames(ctx, yesterday, "")
+		if errYesterday != nil {
+			p.logError("poller yesterday fetch failed", errYesterday)
+		} else {
+			snapYesterday := domaingames.NewTodayResponse(yesterday, yesterdayGames)
+			if writeErr := p.writer.WriteGamesSnapshot(yesterday, snapYesterday); writeErr != nil {
+				p.logError("poller yesterday snapshot write failed", writeErr)
+			}
+		}
+	}
+
 	p.recordSuccess(start)
 	p.logInfo("poller refreshed games",
-		logging.FieldCount, len(games),
+		logging.FieldCount, len(todayGames),
 		logging.FieldDurationMS, time.Since(start).Milliseconds(),
 	)
 }
