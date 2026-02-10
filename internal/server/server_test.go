@@ -39,7 +39,7 @@ func TestServerServesHealthAndGames(t *testing.T) {
 	cfg := config.Config{
 		PollInterval: 5 * time.Millisecond,
 		Snapshots: config.SnapshotSyncConfig{
-			Enabled:        true,
+			Enabled:        false, // avoid background syncer goroutine in test
 			SnapshotFolder: snapshotFolder,
 		},
 	}
@@ -460,7 +460,7 @@ func TestAdminRouteMountedOnlyWithToken(t *testing.T) {
 	cfg := config.Config{
 		Port: "0",
 		Snapshots: config.SnapshotSyncConfig{
-			Enabled:        true,
+			Enabled:        false, // avoid background syncer goroutine in test
 			SnapshotFolder: t.TempDir(),
 			AdminToken:     "secret",
 		},

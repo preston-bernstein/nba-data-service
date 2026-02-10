@@ -32,6 +32,7 @@ type Poller struct {
 
 	ticker   *time.Ticker
 	done     chan struct{}
+	stopped  chan struct{}
 	stopOnce sync.Once
 	startMu  sync.Mutex
 	started  bool
@@ -73,6 +74,7 @@ func New(provider providers.GameProvider, writer SnapshotWriter, logger *slog.Lo
 		now:      time.Now,
 		loc:      loc,
 		done:     make(chan struct{}),
+		stopped:  make(chan struct{}),
 	}
 }
 
@@ -89,6 +91,7 @@ func (p *Poller) Start(ctx context.Context) {
 	p.ticker = time.NewTicker(p.interval)
 
 	go func() {
+		defer close(p.stopped)
 		p.logInfo("poller started", slog.Int64(logging.FieldDurationMS, p.interval.Milliseconds()))
 		// Initial fetch to warm data on boot.
 		p.fetchOnce(ctx)
@@ -112,12 +115,25 @@ func (p *Poller) Start(ctx context.Context) {
 
 // Stop halts the polling loop.
 func (p *Poller) Stop(ctx context.Context) error {
-	_ = ctx
 	p.stopOnce.Do(func() {
 		close(p.done)
 		p.stopTicker()
 	})
-	return nil
+	if ctx == nil {
+		return nil
+	}
+	p.startMu.Lock()
+	started := p.started
+	p.startMu.Unlock()
+	if !started {
+		return nil
+	}
+	select {
+	case <-p.stopped:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (p *Poller) fetchOnce(ctx context.Context) {
