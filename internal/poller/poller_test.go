@@ -10,7 +10,9 @@ import (
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
+	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/teststubs"
+	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 func TestPollerFetchesAndWritesSnapshot(t *testing.T) {
@@ -53,7 +55,7 @@ func TestPollerFetchesAndWritesSnapshot(t *testing.T) {
 	cancel()
 	_ = p.Stop(context.Background())
 
-	// Verify snapshot was written.
+	// Verify today's and yesterday's snapshots were written (poller writes both so games spanning midnight stay updated).
 	snap, ok := writer.Written["2024-01-15"]
 	if !ok {
 		t.Fatalf("expected snapshot written for 2024-01-15")
@@ -61,9 +63,16 @@ func TestPollerFetchesAndWritesSnapshot(t *testing.T) {
 	if len(snap.Games) != 1 || snap.Games[0].ID != "poll-game" {
 		t.Fatalf("unexpected snapshot: %+v", snap)
 	}
+	snapYesterday, ok := writer.Written["2024-01-14"]
+	if !ok {
+		t.Fatalf("expected snapshot written for yesterday 2024-01-14")
+	}
+	if len(snapYesterday.Games) != 1 || snapYesterday.Games[0].ID != "poll-game" {
+		t.Fatalf("unexpected yesterday snapshot: %+v", snapYesterday)
+	}
 
-	if provider.Calls.Load() < 1 {
-		t.Fatalf("expected at least one fetch call")
+	if provider.Calls.Load() < 2 {
+		t.Fatalf("expected at least two fetch calls (today and yesterday)")
 	}
 }
 
@@ -111,6 +120,24 @@ func TestPollerStopIsIdempotent(t *testing.T) {
 	}
 	if err := p.Stop(context.Background()); err != nil {
 		t.Fatalf("second stop returned error: %v", err)
+	}
+}
+
+func TestPollerStopWithNilContext(t *testing.T) {
+	p := New(&teststubs.StubProvider{}, &teststubs.StubSnapshotWriter{}, nil, nil, time.Hour, nil)
+	//nolint:staticcheck // testing explicit nil-context behavior
+	if err := p.Stop(nil); err != nil {
+		t.Fatalf("expected nil error for nil context, got %v", err)
+	}
+}
+
+func TestPollerStopReturnsContextErrorWhenCanceled(t *testing.T) {
+	p := New(&teststubs.StubProvider{}, &teststubs.StubSnapshotWriter{}, nil, nil, time.Hour, nil)
+	p.started = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := p.Stop(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context canceled error, got %v", err)
 	}
 }
 
@@ -220,6 +247,58 @@ func TestPollerLogsOnErrorAndSuccess(t *testing.T) {
 	provider.Err = nil
 	provider.Games = []domaingames.Game{{ID: "ok"}}
 	p.fetchOnce(context.Background()) // should log info
+}
+
+type dateAwareProvider struct {
+	games  []domaingames.Game
+	errFor map[string]error
+	dates  []string
+}
+
+func (p *dateAwareProvider) FetchGames(ctx context.Context, date string, tz string) ([]domaingames.Game, error) {
+	_ = ctx
+	_ = tz
+	p.dates = append(p.dates, date)
+	if err, ok := p.errFor[date]; ok {
+		return nil, err
+	}
+	return p.games, nil
+}
+
+func TestPollerRecordsMetricsWhenRecorderPresent(t *testing.T) {
+	provider := &teststubs.StubProvider{Games: []domaingames.Game{{ID: "g1"}}}
+	p := New(provider, nil, nil, metrics.NewRecorder(), time.Minute, nil)
+	p.fetchOnce(context.Background())
+}
+
+func TestPollerLogsYesterdayFetchError(t *testing.T) {
+	now := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
+	today := timeutil.FormatDate(now)
+	yesterday := timeutil.FormatDate(now.AddDate(0, 0, -1))
+	provider := &dateAwareProvider{
+		games:  []domaingames.Game{{ID: "g1"}},
+		errFor: map[string]error{yesterday: errors.New("yesterday failed")},
+	}
+	writer := &teststubs.StubSnapshotWriter{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
+
+	p := New(provider, writer, logger, nil, time.Minute, nil)
+	p.now = func() time.Time { return now }
+	p.fetchOnce(context.Background())
+
+	if _, ok := writer.Written[today]; !ok {
+		t.Fatalf("expected today snapshot written")
+	}
+	foundYesterday := false
+	for _, d := range provider.dates {
+		if d == yesterday {
+			foundYesterday = true
+			break
+		}
+	}
+	if !foundYesterday {
+		t.Fatalf("expected fetch for yesterday")
+	}
 }
 
 func TestPollerProviderExposesWrappedProvider(t *testing.T) {

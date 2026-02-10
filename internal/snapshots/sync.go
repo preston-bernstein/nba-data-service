@@ -78,11 +78,25 @@ func (s *Syncer) Run(ctx context.Context) {
 
 	now := s.now().In(s.loc)
 	s.backfill(ctx, now)
+	if s.logger != nil {
+		s.logger.Info("snapshot sync initial backfill complete",
+			"msg", "today, yesterday, and 2 days ago refreshed; stale data for those dates should be gone",
+		)
+	}
 	go s.daily(ctx)
 }
 
 func (s *Syncer) backfill(ctx context.Context, now time.Time) {
+	// Delete all snapshot files so we re-fetch the full window and never serve stale data.
+	if s.writer != nil {
+		if err := s.writer.DeleteAllGamesSnapshots(); err != nil {
+			logging.Warn(s.logger, "snapshot wipe failed", "err", err)
+		}
+	}
 	dates := s.buildDates(now)
+	if s.logger != nil && len(dates) > 0 {
+		s.logger.Info("snapshot backfill dates", "count", len(dates), "first_dates", dates[:min(3, len(dates))])
+	}
 	for i, date := range dates {
 		select {
 		case <-ctx.Done():
@@ -112,16 +126,21 @@ func (s *Syncer) daily(ctx context.Context) {
 	}
 }
 
+// alwaysRefreshPastDays is how many past days (including today) we always re-fetch
+// so that historical snapshots get final scores instead of staying SCHEDULED/0-0.
+const alwaysRefreshPastDays = 3
+
 func (s *Syncer) buildDates(now time.Time) []string {
 	var dates []string
-	today := timeutil.FormatDate(now)
-	yesterday := timeutil.FormatDate(now.AddDate(0, 0, -1))
 
-	// Always refresh today and yesterday to capture live/final scores.
-	dates = append(dates, today, yesterday)
+	// Always refresh today and the last (alwaysRefreshPastDays - 1) days so that
+	// when users look backwards they see final scores, not stale SCHEDULED snapshots.
+	for i := 0; i < alwaysRefreshPastDays && i < s.cfg.Days; i++ {
+		dates = append(dates, timeutil.FormatDate(now.AddDate(0, 0, -i)))
+	}
 
-	// Past window beyond yesterday: only fetch if missing (startup/outage).
-	for i := 2; i < s.cfg.Days; i++ {
+	// Past window beyond that: only fetch if missing (startup/outage).
+	for i := alwaysRefreshPastDays; i < s.cfg.Days; i++ {
 		date := timeutil.FormatDate(now.AddDate(0, 0, -i))
 		if !s.hasSnapshot(date) {
 			dates = append(dates, date)
