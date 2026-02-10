@@ -143,6 +143,80 @@ func TestPruneOldSnapshotsRemovesExpiredAndKeepsInvalid(t *testing.T) {
 	}
 }
 
+func TestPruneExpiredGamesSnapshotsRemovesStaleAndUpdatesManifest(t *testing.T) {
+	dir := t.TempDir()
+	w := NewWriter(dir, 2)
+	old := timeutil.FormatDate(time.Now().AddDate(0, 0, -3))
+	recent := timeutil.FormatDate(time.Now())
+
+	writeFile := func(date string) {
+		path := filepath.Join(dir, "games", date+".json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir failed: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+	}
+	writeFile(old)
+	writeFile(recent)
+
+	if err := w.PruneExpiredGamesSnapshots(); err != nil {
+		t.Fatalf("PruneExpiredGamesSnapshots failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "games", old+".json")); !os.IsNotExist(err) {
+		t.Fatalf("expected expired snapshot removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "games", recent+".json")); err != nil {
+		t.Fatalf("expected recent snapshot kept: %v", err)
+	}
+	m, _ := readManifest(filepath.Join(dir, "manifest.json"), 0)
+	if len(m.Games.Dates) != 1 || m.Games.Dates[0] != recent {
+		t.Fatalf("expected manifest to list only recent date, got %v", m.Games.Dates)
+	}
+}
+
+func TestPruneExpiredGamesSnapshotsNilWriter(t *testing.T) {
+	var w *Writer
+	if err := w.PruneExpiredGamesSnapshots(); err == nil {
+		t.Fatalf("expected error for nil writer")
+	}
+}
+
+func TestDeleteAllGamesSnapshotsRemovesAllAndClearsManifest(t *testing.T) {
+	dir := t.TempDir()
+	w := NewWriter(dir, 2)
+	dates := []string{"2024-01-01", "2024-01-02", "2024-01-03"}
+	for _, d := range dates {
+		path := filepath.Join(dir, "games", d+".json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir failed: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+			t.Fatalf("write failed: %v", err)
+		}
+	}
+	if err := w.DeleteAllGamesSnapshots(); err != nil {
+		t.Fatalf("DeleteAllGamesSnapshots failed: %v", err)
+	}
+	for _, d := range dates {
+		if _, err := os.Stat(filepath.Join(dir, "games", d+".json")); !os.IsNotExist(err) {
+			t.Fatalf("expected snapshot %s removed", d)
+		}
+	}
+	m, _ := readManifest(filepath.Join(dir, "manifest.json"), 0)
+	if len(m.Games.Dates) != 0 {
+		t.Fatalf("expected manifest dates empty, got %v", m.Games.Dates)
+	}
+}
+
+func TestDeleteAllGamesSnapshotsNilWriter(t *testing.T) {
+	var w *Writer
+	if err := w.DeleteAllGamesSnapshots(); err == nil {
+		t.Fatalf("expected error for nil writer")
+	}
+}
+
 func TestListDatesIgnoresNonJSONAndDirs(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "games", "nested"), 0o755); err != nil {

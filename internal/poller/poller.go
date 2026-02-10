@@ -123,8 +123,12 @@ func (p *Poller) Stop(ctx context.Context) error {
 func (p *Poller) fetchOnce(ctx context.Context) {
 	start := time.Now()
 	p.recordAttempt(start)
-	today := timeutil.FormatDate(p.now().In(p.loc))
-	games, err := p.provider.FetchGames(ctx, today, "")
+	nowInLoc := p.now().In(p.loc)
+	today := timeutil.FormatDate(nowInLoc)
+	yesterday := timeutil.FormatDate(nowInLoc.AddDate(0, 0, -1))
+
+	// Fetch and write today (primary); poller health is based on today.
+	todayGames, err := p.provider.FetchGames(ctx, today, "")
 	if p.metrics != nil {
 		p.metrics.RecordPollerCycle(time.Since(start), err)
 	}
@@ -135,14 +139,29 @@ func (p *Poller) fetchOnce(ctx context.Context) {
 	}
 
 	if p.writer != nil {
-		snap := domaingames.NewTodayResponse(today, games)
+		snap := domaingames.NewTodayResponse(today, todayGames)
 		if writeErr := p.writer.WriteGamesSnapshot(today, snap); writeErr != nil {
 			p.logError("poller snapshot write failed", writeErr)
 		}
 	}
+
+	// Also fetch and write yesterday so games that span midnight (e.g. 11pm–1am)
+	// keep updating the previous day's snapshot until they finish.
+	if p.writer != nil {
+		yesterdayGames, errYesterday := p.provider.FetchGames(ctx, yesterday, "")
+		if errYesterday != nil {
+			p.logError("poller yesterday fetch failed", errYesterday)
+		} else {
+			snapYesterday := domaingames.NewTodayResponse(yesterday, yesterdayGames)
+			if writeErr := p.writer.WriteGamesSnapshot(yesterday, snapYesterday); writeErr != nil {
+				p.logError("poller yesterday snapshot write failed", writeErr)
+			}
+		}
+	}
+
 	p.recordSuccess(start)
 	p.logInfo("poller refreshed games",
-		logging.FieldCount, len(games),
+		logging.FieldCount, len(todayGames),
 		logging.FieldDurationMS, time.Since(start).Milliseconds(),
 	)
 }

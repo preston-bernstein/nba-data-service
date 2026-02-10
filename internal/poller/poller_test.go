@@ -53,7 +53,7 @@ func TestPollerFetchesAndWritesSnapshot(t *testing.T) {
 	cancel()
 	_ = p.Stop(context.Background())
 
-	// Verify snapshot was written.
+	// Verify today's and yesterday's snapshots were written (poller writes both so games spanning midnight stay updated).
 	snap, ok := writer.Written["2024-01-15"]
 	if !ok {
 		t.Fatalf("expected snapshot written for 2024-01-15")
@@ -61,9 +61,16 @@ func TestPollerFetchesAndWritesSnapshot(t *testing.T) {
 	if len(snap.Games) != 1 || snap.Games[0].ID != "poll-game" {
 		t.Fatalf("unexpected snapshot: %+v", snap)
 	}
+	snapYesterday, ok := writer.Written["2024-01-14"]
+	if !ok {
+		t.Fatalf("expected snapshot written for yesterday 2024-01-14")
+	}
+	if len(snapYesterday.Games) != 1 || snapYesterday.Games[0].ID != "poll-game" {
+		t.Fatalf("unexpected yesterday snapshot: %+v", snapYesterday)
+	}
 
-	if provider.Calls.Load() < 1 {
-		t.Fatalf("expected at least one fetch call")
+	if provider.Calls.Load() < 2 {
+		t.Fatalf("expected at least two fetch calls (today and yesterday)")
 	}
 }
 
