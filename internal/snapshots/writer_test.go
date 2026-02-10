@@ -264,3 +264,116 @@ func TestContainsDate(t *testing.T) {
 		t.Fatalf("expected containsDate to return false for missing date")
 	}
 }
+
+func TestDeleteAllGamesSnapshotsReturnsErrorWhenListDatesFails(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create games file: %v", err)
+	}
+	w := NewWriter(dir, 7)
+	if err := w.DeleteAllGamesSnapshots(); err == nil {
+		t.Fatalf("expected error when games path is not a directory")
+	}
+}
+
+func TestPruneExpiredGamesSnapshotsReturnsErrorWhenListDatesFails(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create games file: %v", err)
+	}
+	w := NewWriter(dir, 7)
+	if err := w.PruneExpiredGamesSnapshots(); err == nil {
+		t.Fatalf("expected error when games path is not a directory")
+	}
+}
+
+func TestUpdateManifestReturnsErrorWhenListDatesFails(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create games file: %v", err)
+	}
+	w := NewWriter(dir, 7)
+	if err := w.updateManifest(kindGames, "2024-01-01"); err == nil {
+		t.Fatalf("expected updateManifest to return error")
+	}
+}
+
+func TestUpdateManifestAddsDateWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	w := NewWriter(dir, 10000)
+	date := timeutil.FormatDate(time.Now().UTC())
+	if err := w.updateManifest(kindGames, date); err != nil {
+		t.Fatalf("updateManifest failed: %v", err)
+	}
+	m, err := readManifest(filepath.Join(dir, "manifest.json"), 0)
+	if err != nil {
+		t.Fatalf("expected manifest read: %v", err)
+	}
+	if len(m.Games.Dates) != 1 || m.Games.Dates[0] != date {
+		t.Fatalf("expected manifest dates to include %s, got %v", date, m.Games.Dates)
+	}
+}
+
+func TestWriteSnapshotSkipsRewriteWhenUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	w := NewWriter(dir, 10000)
+	date := timeutil.FormatDate(time.Now().UTC())
+	payload := map[string]string{"id": "same"}
+
+	if err := w.writeSnapshot(kindGames, date, payload); err != nil {
+		t.Fatalf("first write failed: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "manifest.json")); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("failed to remove manifest: %v", err)
+	}
+	if err := w.writeSnapshot(kindGames, date, payload); err != nil {
+		t.Fatalf("second write failed: %v", err)
+	}
+	m, err := readManifest(filepath.Join(dir, "manifest.json"), 0)
+	if err != nil {
+		t.Fatalf("expected manifest read: %v", err)
+	}
+	if len(m.Games.Dates) != 1 || m.Games.Dates[0] != date {
+		t.Fatalf("expected manifest dates to include %s, got %v", date, m.Games.Dates)
+	}
+}
+
+func TestWriteSnapshotWithPageParam(t *testing.T) {
+	dir := t.TempDir()
+	w := NewWriter(dir, 7)
+	if err := w.writeSnapshot(kindGames, "2024-01-04", map[string]string{"id": "p1"}, 1); err != nil {
+		t.Fatalf("writeSnapshot with page failed: %v", err)
+	}
+}
+
+func TestWriteSnapshotMarshalError(t *testing.T) {
+	w := NewWriter(t.TempDir(), 7)
+	payload := make(chan int)
+	if err := w.writeSnapshot(kindGames, "2024-01-05", payload); err == nil {
+		t.Fatalf("expected marshal error")
+	}
+}
+
+func TestWriteSnapshotWriteFileError(t *testing.T) {
+	dir := t.TempDir()
+	gamesDir := filepath.Join(dir, "games")
+	if err := os.MkdirAll(gamesDir, 0o500); err != nil {
+		t.Fatalf("failed to create games dir: %v", err)
+	}
+	w := NewWriter(dir, 7)
+	if err := w.writeSnapshot(kindGames, "2024-01-06", map[string]string{"id": "nope"}); err == nil {
+		t.Fatalf("expected write error for read-only directory")
+	}
+}
+
+func TestWriteSnapshotRenameError(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "games", "2024-01-07.json")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("failed to create target dir: %v", err)
+	}
+	w := NewWriter(dir, 7)
+	if err := w.writeSnapshot(kindGames, "2024-01-07", map[string]string{"id": "rename"}); err == nil {
+		t.Fatalf("expected rename error when target is a directory")
+	}
+}

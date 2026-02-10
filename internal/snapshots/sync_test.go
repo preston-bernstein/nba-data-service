@@ -1,9 +1,11 @@
 package snapshots
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -276,6 +278,41 @@ func TestBackfillRespectsContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	s.backfill(ctx, time.Now().UTC()) // should exit quickly without writing
+}
+
+func TestRunLogsInitialBackfillComplete(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	writer := NewWriter(t.TempDir(), 7)
+	prov := goodProvider{games: []domaingames.Game{{ID: "g1"}}}
+	s := NewSyncer(prov, writer, SyncConfig{Enabled: true, Days: 1, Interval: time.Nanosecond}, logger, nil)
+	s.now = func() time.Time { return time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC) }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.Run(ctx)
+	cancel()
+
+	if !strings.Contains(buf.String(), "snapshot sync initial backfill complete") {
+		t.Fatalf("expected backfill completion log, got %s", buf.String())
+	}
+}
+
+func TestBackfillLogsWhenSnapshotWipeFails(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create games file: %v", err)
+	}
+	writer := NewWriter(dir, 7)
+	prov := goodProvider{games: []domaingames.Game{{ID: "g1"}}}
+	s := NewSyncer(prov, writer, SyncConfig{Enabled: true, Days: 1, Interval: time.Nanosecond}, logger, nil)
+
+	s.backfill(context.Background(), time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC))
+
+	if !strings.Contains(buf.String(), "snapshot wipe failed") {
+		t.Fatalf("expected snapshot wipe failed log, got %s", buf.String())
+	}
 }
 
 // testLogger returns a no-op slog logger.
