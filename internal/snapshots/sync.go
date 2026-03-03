@@ -139,8 +139,8 @@ func (s *Syncer) buildDates(now time.Time) []string {
 		dates = append(dates, timeutil.FormatDate(now.AddDate(0, 0, -i)))
 	}
 
-	// Past window beyond that: only fetch if missing (startup/outage).
-	for i := alwaysRefreshPastDays; i < s.cfg.Days; i++ {
+	// Past window beyond the always-refresh range: only fetch if missing (startup/outage).
+	for i := alwaysRefreshPastDays; i <= s.cfg.Days; i++ {
 		date := timeutil.FormatDate(now.AddDate(0, 0, -i))
 		if !s.hasSnapshot(date) {
 			dates = append(dates, date)
