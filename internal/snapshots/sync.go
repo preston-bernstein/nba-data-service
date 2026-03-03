@@ -121,7 +121,7 @@ func (s *Syncer) buildDates(now time.Time) []string {
 	dates = append(dates, today, yesterday)
 
 	// Past window beyond yesterday: only fetch if missing (startup/outage).
-	for i := 2; i < s.cfg.Days; i++ {
+	for i := 2; i <= s.cfg.Days; i++ {
 		date := timeutil.FormatDate(now.AddDate(0, 0, -i))
 		if !s.hasSnapshot(date) {
 			dates = append(dates, date)

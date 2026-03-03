@@ -93,7 +93,12 @@ func TestSyncerBackfillsPastAndFuture(t *testing.T) {
 	syncer.Run(ctx)
 	cancel()
 
-	expected := []string{"2024-01-10", "2024-01-09", "2024-01-11"}
+	expected := []string{
+		"2024-01-10", // today
+		"2024-01-09", // yesterday
+		"2024-01-07", // additional past day (no existing snapshot)
+		"2024-01-11", // future day (no existing snapshot)
+	}
 	assertDatesEqual(t, provider.dates, expected)
 	for _, date := range expected {
 		requireSnapshotExists(t, writer, date)
