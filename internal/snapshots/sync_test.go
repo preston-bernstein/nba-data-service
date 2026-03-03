@@ -95,8 +95,10 @@ func TestSyncerBackfillsPastAndFuture(t *testing.T) {
 	expected := []string{
 		"2024-01-10", // today
 		"2024-01-09", // yesterday
-		"2024-01-07", // additional past day (no existing snapshot)
-		"2024-01-11", // future day (no existing snapshot)
+		"2024-01-08", // 2 days ago (always refresh)
+		"2024-01-07", // 3 days ago (configured past window)
+		"2024-01-11", // future day 1 (no existing snapshot)
+		"2024-01-12", // future day 2 (no existing snapshot)
 	}
 	assertDatesEqual(t, provider.dates, expected)
 	for _, date := range expected {
