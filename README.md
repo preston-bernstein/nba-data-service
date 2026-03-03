@@ -42,7 +42,7 @@ curl http://localhost:4000/games/fixture-1
 - `PORT` (default `4000`)
 - `PROVIDER` (`fixture`|`balldontlie`, default `fixture`)
 - `POLL_INTERVAL` (default `30s`)
-- `BALDONTLIE_BASE_URL`, `BALDONTLIE_API_KEY` (optional), `BALDONTLIE_TIMEZONE` (default `America/New_York`), `BALDONTLIE_MAX_PAGES` (default `5`), `BALDONTLIE_TIMEOUT` (default `10s`)
+- `BALLDONTLIE_BASE_URL`, `BALLDONTLIE_API_KEY` (optional), `BALLDONTLIE_TIMEZONE` (default `America/New_York`), `BALLDONTLIE_MAX_PAGES` (default `5`), `BALLDONTLIE_TIMEOUT` (default `10s`)
 - `LOG_LEVEL` (`info` default), `LOG_FORMAT` (`json` or `text`)
 - Metrics/OTLP: `METRICS_ENABLED`, `METRICS_PORT`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_INSECURE`
 - Snapshots: `SNAPSHOT_SYNC_ENABLED`, `SNAPSHOT_SYNC_DAYS`, `SNAPSHOT_FUTURE_DAYS`, `SNAPSHOT_SYNC_INTERVAL`, `SNAPSHOT_DAILY_HOUR`
@@ -58,6 +58,10 @@ curl http://localhost:4000/games/fixture-1
 
 ### Data freshness
 - Games: live poller (interval via `POLL_INTERVAL`) plus snapshot sync.
+- **When snapshot sync runs** (if `SNAPSHOT_SYNC_ENABLED` is true, default):
+  - **On startup**: one full backfill in a background goroutine (prune expired files, then refresh today, yesterday, and 2 days ago, then any missing past/future dates). There is a 90s delay between each date fetch, so the initial backfill takes several minutes. Check logs for `snapshot sync starting` and `snapshot sync initial backfill complete`.
+  - **Daily**: full backfill again at the configured hour (default 2 AM UTC, `SNAPSHOT_DAILY_HOUR`).
+- After a restart (e.g. `docker compose up`), wait ~5 minutes for the startup backfill to refresh the last 3 days, or call `POST /admin/snapshots/refresh` (with `ADMIN_TOKEN`) to refresh specific dates. If you use a persistent volume, old snapshot files are reused until overwritten by the backfill.
 
 ### Structure
 - `cmd/server` — entrypoint.
