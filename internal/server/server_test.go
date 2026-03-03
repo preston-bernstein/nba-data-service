@@ -25,7 +25,6 @@ import (
 
 func TestServerServesHealthAndGames(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	game := testutil.SampleGame("stub-1")
 	game.StartTime = time.Now().UTC().Format(time.RFC3339)
@@ -40,12 +39,18 @@ func TestServerServesHealthAndGames(t *testing.T) {
 	cfg := config.Config{
 		PollInterval: 5 * time.Millisecond,
 		Snapshots: config.SnapshotSyncConfig{
-			Enabled:        true,
+			Enabled:        false, // avoid background syncer goroutine in test
 			SnapshotFolder: snapshotFolder,
 		},
 	}
 	srv := newServerWithProvider(cfg, nil, provider)
 	srv.poller.Start(ctx)
+
+	// Stop the poller before TempDir cleanup to avoid snapshot-write races.
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.poller.Stop(context.Background())
+	})
 
 	select {
 	case <-provider.Notify:
@@ -455,7 +460,7 @@ func TestAdminRouteMountedOnlyWithToken(t *testing.T) {
 	cfg := config.Config{
 		Port: "0",
 		Snapshots: config.SnapshotSyncConfig{
-			Enabled:        true,
+			Enabled:        false, // avoid background syncer goroutine in test
 			SnapshotFolder: t.TempDir(),
 			AdminToken:     "secret",
 		},

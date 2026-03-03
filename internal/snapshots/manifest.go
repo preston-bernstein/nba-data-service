@@ -43,7 +43,9 @@ func readManifest(path string, retentionDays int) (Manifest, error) {
 	if err != nil {
 		return defaultManifest(retentionDays), err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	var m Manifest
 	if err := json.NewDecoder(f).Decode(&m); err != nil {
 		return defaultManifest(retentionDays), err

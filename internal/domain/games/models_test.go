@@ -7,8 +7,8 @@ import (
 	"github.com/preston-bernstein/nba-data-service/internal/domain/teams"
 )
 
-func TestGameStatusValues(t *testing.T) {
-	expected := map[GameStatus]string{
+func TestGameStatusKindValues(t *testing.T) {
+	expected := map[GameStatusKind]string{
 		StatusScheduled:  "SCHEDULED",
 		StatusInProgress: "IN_PROGRESS",
 		StatusFinal:      "FINAL",
@@ -37,6 +37,7 @@ func TestGameJSONTags(t *testing.T) {
 		{"AwayTeam", "awayTeam"},
 		{"StartTime", "startTime"},
 		{"Status", "status"},
+		{"StatusKind", "statusKind"},
 		{"Score", "score"},
 		{"Meta", "meta"},
 	}
@@ -65,8 +66,8 @@ func TestGameUsesTeamsDomain(t *testing.T) {
 func TestNewTodayResponse(t *testing.T) {
 	date := "2024-01-15"
 	games := []Game{
-		{ID: "g1", Status: StatusScheduled},
-		{ID: "g2", Status: StatusFinal},
+		{ID: "g1", Status: "Scheduled", StatusKind: StatusScheduled},
+		{ID: "g2", Status: "Final", StatusKind: StatusFinal},
 	}
 
 	resp := NewTodayResponse(date, games)
