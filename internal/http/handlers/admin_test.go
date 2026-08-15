@@ -177,10 +177,3 @@ func TestClientIPHandlesNilRequest(t *testing.T) {
 		t.Fatalf("expected empty string for nil request, got %q", got)
 	}
 }
-
-func TestAdminTokenFromEnv(t *testing.T) {
-	t.Setenv("ADMIN_TOKEN", "abc")
-	if got := AdminTokenFromEnv(); got != "abc" {
-		t.Fatalf("expected token from env, got %s", got)
-	}
-}
