@@ -3,7 +3,6 @@ package handlers
 import (
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -110,11 +109,6 @@ func (h *AdminHandler) RefreshSnapshots(w http.ResponseWriter, r *http.Request) 
 		slog.String("tz", tz),
 		slog.Int("count", len(games)),
 	)
-}
-
-// AdminTokenFromEnv reads ADMIN_TOKEN (optional).
-func AdminTokenFromEnv() string {
-	return os.Getenv("ADMIN_TOKEN")
 }
 
 func (h *AdminHandler) authorize(r *http.Request) bool {
