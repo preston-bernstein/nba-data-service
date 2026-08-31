@@ -136,7 +136,7 @@ func TestAdminRefreshUnauthorizedLogsClientIP(t *testing.T) {
 	logger, buf := testutil.NewBufferLogger()
 	h := NewAdminHandler(nil, nil, "secret", logger)
 	req := httptest.NewRequest(http.MethodPost, "/admin/snapshots/refresh", nil)
-	req.Header.Set("X-Forwarded-For", "10.0.0.1, 10.0.0.2")
+	req.Header.Set("X-Forwarded-For", "192.0.2.1, 192.0.2.2")
 	rr := httptest.NewRecorder()
 
 	h.RefreshSnapshots(rr, req)

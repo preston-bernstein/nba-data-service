@@ -1,6 +1,6 @@
 # Maintainability Polish Pass — 2026-08-15
 
-Scope: full-repo Go maintainability polish (dead code, readability, error-handling/observability discipline), per the standing polish process. Cost-no-object pass, conservative given this is live infrastructure deployed to desktop-agent, xps-agent, and a DigitalOcean VPS.
+Scope: full-repo Go maintainability polish (dead code, readability, error-handling/observability discipline), per the standing polish process. Cost-no-object pass, conservative given this is live infrastructure deployed to internal home-lab hosts and a DigitalOcean VPS.
 
 ## Process
 
@@ -48,5 +48,5 @@ Both exist specifically to make other code testable; deadcode only flags them be
 
 ## Not done (explicitly out of scope for this pass)
 
-- No deploy or service restart on desktop-agent / xps-agent / the DigitalOcean VPS. To roll this out: pull `main` on each host, rebuild the Go binary (`go build ./cmd/server`), and restart the systemd unit (or equivalent) — no config/env changes needed since nothing behavior-visible changed in production wiring.
+- No deploy or service restart on the internal home-lab hosts / the DigitalOcean VPS. To roll this out: pull `main` on each host, rebuild the Go binary (`go build ./cmd/server`), and restart the systemd unit (or equivalent) — no config/env changes needed since nothing behavior-visible changed in production wiring.
 - No changes to `internal/domain/games/models.go`, `internal/domain/teams/models.go`, or `api/openapi.yaml` — confirmed via diff review; nothing in this pass touched the codegen-sensitive surface nba-analytics-hub depends on.
