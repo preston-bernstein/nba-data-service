@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/preston-bernstein/nba-data-service/internal/config"
+	"github.com/preston-bernstein/nba-data-service/internal/events"
 	httpserver "github.com/preston-bernstein/nba-data-service/internal/http"
 	"github.com/preston-bernstein/nba-data-service/internal/http/handlers"
 	"github.com/preston-bernstein/nba-data-service/internal/http/middleware"
@@ -27,6 +28,7 @@ type Server struct {
 	metricsServer httpServer
 	poller        Poller
 	metricsStop   func(context.Context) error
+	publisher     events.Publisher
 }
 
 // New constructs a server with default provider and poller wiring.
@@ -51,6 +53,8 @@ func newServerWithMetrics(cfg config.Config, logger *slog.Logger, provider provi
 	loc := timeutil.ResolveLocation(cfg.Balldontlie.Timezone)
 	snaps := buildSnapshots(cfg, provider, logger, loc)
 	plr := poller.New(provider, snaps.writer, logger, recorder, cfg.PollInterval, loc)
+	pub := buildPublisher(cfg, logger)
+	plr.SetPublisher(pub)
 	httpSrv := buildHTTPServer(cfg, logger, provider, recorder, plr, snaps, loc)
 
 	return &Server{
@@ -61,6 +65,7 @@ func newServerWithMetrics(cfg config.Config, logger *slog.Logger, provider provi
 		metricsServer: metricsSrv,
 		poller:        plr,
 		metricsStop:   metricsShutdown,
+		publisher:     pub,
 	}
 }
 
@@ -158,6 +163,11 @@ func (s *Server) gracefulShutdown() {
 
 	if err := s.poller.Stop(shutdownCtx); err != nil && s.logger != nil {
 		s.logger.Error("failed to stop poller", "error", err)
+	}
+
+	// Close after the poller stops, so no publish is in flight. Close flushes buffered records.
+	if s.publisher != nil {
+		s.publisher.Close()
 	}
 
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil && s.logger != nil {

@@ -47,6 +47,21 @@ curl http://localhost:4000/games/fixture-1
 - Metrics/OTLP: `METRICS_ENABLED`, `METRICS_PORT`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_INSECURE`
 - Snapshots: `SNAPSHOT_SYNC_ENABLED`, `SNAPSHOT_SYNC_DAYS`, `SNAPSHOT_FUTURE_DAYS`, `SNAPSHOT_SYNC_INTERVAL`, `SNAPSHOT_DAILY_HOUR`
 - Admin: `ADMIN_TOKEN` for snapshot refresh
+- Kafka: `KAFKA_BROKERS` (comma list, empty turns publishing off), `KAFKA_TOPIC` (default `game.updated`)
+
+### Kafka
+The poller publishes a `game.updated` event to Kafka when a game is new, or its `statusKind` or `score` changed since the last poll. The message key is the game id, so one game stays in order on one partition. The JSON shape is in `internal/events/testdata/game.updated.v1.json`.
+
+- The last-seen state is kept in memory. After a restart, the first poll sends a `created` event for every game.
+- If Kafka is down, the poller logs the error and finishes the cycle. It retries the unsent games on the next poll.
+- Batches are gzip compressed. The franz-go default is snappy, which the Node consumer (kafkajs) cannot read.
+- Set `KAFKA_BROKERS` to turn it on. Leave it empty and nothing is published.
+
+Integration test (needs a broker; it skips unless `KAFKA_TEST_BROKERS` is set):
+
+```sh
+make test-integration   # uses localhost:29092 by default
+```
 
 ### Postman
 - Collection: `postman/nba-data-service.postman_collection.json`
