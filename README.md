@@ -50,6 +50,8 @@ curl http://localhost:4000/games/fixture-1
 - Kafka: `KAFKA_BROKERS` (comma list, empty turns publishing off), `KAFKA_TOPIC` (default `game.updated`)
 
 ### Kafka
+Event contract, topics, and how to inspect lag: [nba-infra/kafka/README.md](https://github.com/preston-bernstein/nba-infra/blob/main/kafka/README.md).
+
 The poller publishes a `game.updated` event to Kafka when a game is new, or its `statusKind` or `score` changed since the last poll. The message key is the game id, so one game stays in order on one partition. The JSON shape is in `internal/events/testdata/game.updated.v1.json`.
 
 - The last-seen state is kept in memory. After a restart, the first poll sends a `created` event for every game.
