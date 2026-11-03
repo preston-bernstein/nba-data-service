@@ -9,8 +9,9 @@ on:
   push:
     branches: [main]
     paths: ['.github/workflows/**']
+  # No paths filter on pull_request: "lint / workflow lint" is a required check,
+  # and a path-filtered run never reports on docs-only PRs, which blocks them.
   pull_request:
-    paths: ['.github/workflows/**']
   workflow_dispatch:
 
 concurrency:
