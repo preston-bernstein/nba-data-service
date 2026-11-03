@@ -17,8 +17,11 @@ const (
 	envSnapshotFutureDays = "SNAPSHOT_FUTURE_DAYS"
 	envSnapshotRate       = "SNAPSHOT_SYNC_INTERVAL"
 	envSnapshotHour       = "SNAPSHOT_DAILY_HOUR"
+	envKafkaBrokers       = "KAFKA_BROKERS"
+	envKafkaTopic         = "KAFKA_TOPIC"
 
-	defaultPort = "4000"
+	defaultKafkaTopic = "game.updated"
+	defaultPort       = "4000"
 	// Conservative default poll interval to respect upstream quotas (balldontlie: 5 req/min).
 	defaultPollInterval       = 2 * Duration(time.Minute)
 	defaultProvider           = "fixture"

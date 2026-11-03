@@ -18,6 +18,28 @@ jobs:
   test-and-coverage:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      kafka:
+        image: apache/kafka:3.8.1
+        env:
+          KAFKA_NODE_ID: "1"
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 24
     permissions:
       contents: read
       pull-requests: read
@@ -39,10 +61,11 @@ jobs:
       - name: Run coverage
         env:
           CGO_ENABLED: 0
+          KAFKA_TEST_BROKERS: 127.0.0.1:9092
           GOCACHE: ${{ github.workspace }}/.cache/go-build
         run: |
           mkdir -p "$GOCACHE"
-          go test -coverprofile=coverage.out ./...
+          go test -tags integration -coverprofile=coverage.out ./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0

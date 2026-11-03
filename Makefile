@@ -3,7 +3,7 @@ CGO_ENABLED ?= 0
 GOCACHE ?= $(CURDIR)/.cache/go-build
 BIN_DIR ?= bin
 
-.PHONY: build test fmt tidy run
+.PHONY: build test test-integration fmt tidy run
 
 build:
 	@mkdir -p $(BIN_DIR) $(GOCACHE)
@@ -12,6 +12,12 @@ build:
 test:
 	@mkdir -p $(GOCACHE)
 	CGO_ENABLED=$(CGO_ENABLED) GOCACHE=$(GOCACHE) $(GO) test ./...
+
+# Needs a Kafka broker. Override KAFKA_TEST_BROKERS if yours is not on localhost:29092.
+test-integration: export KAFKA_TEST_BROKERS ?= localhost:29092
+test-integration:
+	@mkdir -p $(GOCACHE)
+	CGO_ENABLED=$(CGO_ENABLED) GOCACHE=$(GOCACHE) $(GO) test -tags integration -count=1 ./internal/events/
 
 coverage:
 	@mkdir -p $(GOCACHE)
