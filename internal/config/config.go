@@ -8,6 +8,7 @@ type Config struct {
 	Balldontlie  BalldontlieConfig
 	Metrics      MetricsConfig
 	Snapshots    SnapshotSyncConfig
+	Kafka        KafkaConfig
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -19,5 +20,6 @@ func Load() Config {
 		Balldontlie:  loadBalldontlie(),
 		Metrics:      loadMetrics(),
 		Snapshots:    loadSnapshotSync(),
+		Kafka:        loadKafka(),
 	}
 }

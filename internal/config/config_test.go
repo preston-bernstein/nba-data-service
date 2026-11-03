@@ -179,3 +179,27 @@ func TestLoadNonPositiveDurationFallsBack(t *testing.T) {
 		t.Fatalf("expected default poll interval on non-positive value, got %s", cfg.PollInterval)
 	}
 }
+
+func TestLoadKafkaDefaults(t *testing.T) {
+	t.Setenv(envKafkaBrokers, "")
+	t.Setenv(envKafkaTopic, "")
+	cfg := Load()
+	if len(cfg.Kafka.Brokers) != 0 {
+		t.Fatalf("expected no brokers, got %v", cfg.Kafka.Brokers)
+	}
+	if cfg.Kafka.Topic != "game.updated" {
+		t.Fatalf("unexpected topic %q", cfg.Kafka.Topic)
+	}
+}
+
+func TestLoadKafkaBrokersList(t *testing.T) {
+	t.Setenv(envKafkaBrokers, " a:9092, b:9092 ,,")
+	t.Setenv(envKafkaTopic, "custom")
+	cfg := Load()
+	if len(cfg.Kafka.Brokers) != 2 || cfg.Kafka.Brokers[0] != "a:9092" || cfg.Kafka.Brokers[1] != "b:9092" {
+		t.Fatalf("unexpected brokers %v", cfg.Kafka.Brokers)
+	}
+	if cfg.Kafka.Topic != "custom" {
+		t.Fatalf("unexpected topic %q", cfg.Kafka.Topic)
+	}
+}
