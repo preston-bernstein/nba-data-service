@@ -7,13 +7,17 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/events"
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
-const defaultInterval = 30 * time.Second
+const (
+	defaultInterval = 30 * time.Second
+	publishTimeout  = 5 * time.Second
+)
 
 // SnapshotWriter persists game snapshots to disk.
 type SnapshotWriter interface {
@@ -29,6 +33,9 @@ type Poller struct {
 	interval time.Duration
 	now      func() time.Time
 	loc      *time.Location
+
+	publisher events.Publisher
+	detector  *events.Detector
 
 	ticker   *time.Ticker
 	done     chan struct{}
@@ -73,9 +80,16 @@ func New(provider providers.GameProvider, writer SnapshotWriter, logger *slog.Lo
 		interval: interval,
 		now:      time.Now,
 		loc:      loc,
+		detector: events.NewDetector(),
 		done:     make(chan struct{}),
 		stopped:  make(chan struct{}),
 	}
+}
+
+// SetPublisher turns on game.updated publishing. Call it before Start.
+// A nil publisher turns publishing off.
+func (p *Poller) SetPublisher(pub events.Publisher) {
+	p.publisher = pub
 }
 
 // Start begins polling until the context is cancelled or Stop is called.
@@ -154,6 +168,8 @@ func (p *Poller) fetchOnce(ctx context.Context) {
 		return
 	}
 
+	p.publishChanges(ctx, todayGames)
+
 	if p.writer != nil {
 		snap := domaingames.NewTodayResponse(today, todayGames)
 		if writeErr := p.writer.WriteGamesSnapshot(today, snap); writeErr != nil {
@@ -168,6 +184,7 @@ func (p *Poller) fetchOnce(ctx context.Context) {
 		if errYesterday != nil {
 			p.logError("poller yesterday fetch failed", errYesterday)
 		} else {
+			p.publishChanges(ctx, yesterdayGames)
 			snapYesterday := domaingames.NewTodayResponse(yesterday, yesterdayGames)
 			if writeErr := p.writer.WriteGamesSnapshot(yesterday, snapYesterday); writeErr != nil {
 				p.logError("poller yesterday snapshot write failed", writeErr)
@@ -180,6 +197,30 @@ func (p *Poller) fetchOnce(ctx context.Context) {
 		logging.FieldCount, len(todayGames),
 		logging.FieldDurationMS, time.Since(start).Milliseconds(),
 	)
+}
+
+// publishChanges sends an event for each game that is new or changed.
+// A failure is logged and never fails the cycle. After the first failure
+// the rest of the batch is skipped, so a dead broker costs one timeout per
+// cycle. Unsent games are not marked as seen, so the next cycle tries again.
+func (p *Poller) publishChanges(ctx context.Context, games []domaingames.Game) {
+	if p.publisher == nil {
+		return
+	}
+	for _, g := range games {
+		kind, changed := p.detector.Check(g)
+		if !changed {
+			continue
+		}
+		pubCtx, cancel := context.WithTimeout(ctx, publishTimeout)
+		err := p.publisher.Publish(pubCtx, events.NewEvent(g, kind, p.now()))
+		cancel()
+		if err != nil {
+			p.logError("poller event publish failed", err, "game_id", g.ID)
+			return
+		}
+		p.detector.Commit(g)
+	}
 }
 
 func (p *Poller) stopTicker() {
