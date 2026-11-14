@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 
 	"github.com/preston-bernstein/nba-data-service/internal/poller"
 )
@@ -39,17 +40,30 @@ type StubHTTPServer struct {
 	ShutdownCalls int
 	ListenErr     error
 	ShutdownErr   error
+
+	mu sync.Mutex // guards the call counters when the server runs in a goroutine
 }
 
 func (s *StubHTTPServer) ListenAndServe() error {
+	s.mu.Lock()
 	s.ListenCalls++
+	s.mu.Unlock()
 	return s.ListenErr
 }
 
 func (s *StubHTTPServer) Shutdown(ctx context.Context) error {
 	_ = ctx
+	s.mu.Lock()
 	s.ShutdownCalls++
+	s.mu.Unlock()
 	return s.ShutdownErr
+}
+
+// ListenCount returns ListenCalls safely while a server goroutine may still be running.
+func (s *StubHTTPServer) ListenCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ListenCalls
 }
 
 func (s *StubHTTPServer) Addr() string {
