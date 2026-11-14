@@ -125,8 +125,8 @@ func TestPollerStopIsIdempotent(t *testing.T) {
 
 func TestPollerStopWithNilContext(t *testing.T) {
 	p := New(&teststubs.StubProvider{}, &teststubs.StubSnapshotWriter{}, nil, nil, time.Hour, nil)
-	//lint:ignore SA1012 testing explicit nil-context behavior
-	if err := p.Stop(nil); err != nil {
+	var nilCtx context.Context // the case under test: a nil context
+	if err := p.Stop(nilCtx); err != nil {
 		t.Fatalf("expected nil error for nil context, got %v", err)
 	}
 }
