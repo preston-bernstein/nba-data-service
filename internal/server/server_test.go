@@ -241,7 +241,7 @@ func TestStartMetricsUsesServer(t *testing.T) {
 	}
 	s.startMetrics()
 	time.Sleep(10 * time.Millisecond)
-	if stub.ListenCalls == 0 {
+	if stub.ListenCount() == 0 {
 		t.Fatalf("expected metrics server to start")
 	}
 }
