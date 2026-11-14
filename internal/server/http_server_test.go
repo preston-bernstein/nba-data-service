@@ -37,7 +37,8 @@ func TestNetHTTPServerListenAndServeWithoutListener(t *testing.T) {
 	_ = srv.Shutdown(context.Background())
 
 	select {
-	case <-done:
+	case err := <-done:
+		_ = err // any return (success or error) is acceptable
 		// Any return (success or error) is acceptable; ensure it exits promptly.
 	case <-time.After(1 * time.Second):
 		t.Fatalf("listen did not return after shutdown")

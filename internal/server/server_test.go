@@ -201,7 +201,8 @@ func TestLaunchServerLogsStartAndWarnsOnError(t *testing.T) {
 	called := make(chan error, 1)
 	launchServer("http", stub, logger, func(err error) { called <- err })
 	select {
-	case <-called:
+	case err := <-called:
+		_ = err
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("expected onError to be called")
 	}
