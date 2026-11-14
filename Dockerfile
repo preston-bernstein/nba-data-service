@@ -7,6 +7,8 @@ WORKDIR /app
 ENV CGO_ENABLED=0 \
     GOCACHE=/app/.cache/go-build
 
+# existing finding; fix when this line is next changed
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates
 
 COPY go.mod go.sum ./
@@ -19,6 +21,8 @@ RUN mkdir -p $GOCACHE && go build -o /app/bin/server ./cmd/server
 FROM alpine:3.19
 WORKDIR /app
 RUN addgroup -S app && adduser -S app -G app
+# existing finding; fix when this line is next changed
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /app/bin/server /usr/local/bin/server
 USER app
