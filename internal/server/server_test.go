@@ -195,7 +195,7 @@ func TestLaunchServerSuccessDoesNotCallOnError(t *testing.T) {
 }
 
 func TestLaunchServerLogsStartAndWarnsOnError(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	stub := &testutil.StubHTTPServer{AddrVal: ":1", ListenErr: errors.New("fail")}
 	called := make(chan error, 1)
@@ -213,7 +213,7 @@ func TestLaunchServerLogsStartAndWarnsOnError(t *testing.T) {
 }
 
 func TestLaunchServerIgnoresErrServerClosed(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	stub := &testutil.CloseableHTTPServer{}
 	called := make(chan struct{}, 1)
@@ -248,7 +248,7 @@ func TestStartMetricsUsesServer(t *testing.T) {
 
 func TestStartMetricsLogsWhenLoggerPresent(t *testing.T) {
 	stub := &testutil.StubHTTPServer{AddrVal: "addr", ListenErr: http.ErrServerClosed}
-	var buf bytes.Buffer
+	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	s := &Server{
 		logger:        logger,
@@ -598,7 +598,7 @@ func TestServerStartHandlesListenErrorAndStops(t *testing.T) {
 func TestStartServerLogsAndStopsOnError(t *testing.T) {
 	plr := &testutil.StubPoller{}
 	httpSrv := &testutil.StubHTTPServer{ListenErr: errors.New("boom"), AddrVal: ":0"}
-	var buf bytes.Buffer
+	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	srv := newServerWithDeps(config.Config{}, logger, httpSrv, plr)
@@ -649,4 +649,22 @@ func TestRunCancelsAndStopsComponents(t *testing.T) {
 	if httpSrv.ShutdownCalls != 1 {
 		t.Fatalf("expected server Shutdown called once, got %d", httpSrv.ShutdownCalls)
 	}
+}
+
+// syncBuffer is a bytes.Buffer safe for the logger goroutines these tests start while the test reads the output.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
