@@ -15,6 +15,7 @@ RUN go mod download
 COPY . .
 RUN mkdir -p $GOCACHE && go build -o /app/bin/server ./cmd/server
 
+# docker-allow: unpinned image has no pinnable upstream tag or digest (local build or moving tag)
 FROM alpine:3.19
 WORKDIR /app
 RUN addgroup -S app && adduser -S app -G app
