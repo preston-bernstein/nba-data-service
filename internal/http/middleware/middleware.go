@@ -26,11 +26,11 @@ func LoggingMiddleware(baseLogger *slog.Logger, recorder *metrics.Recorder, next
 		clientIP := requestutil.ClientIP(r)
 
 		logger := baseLogger.With(
-			slog.String("request_id", reqID),
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.String("query", r.URL.RawQuery),
-			slog.String("client_ip", clientIP),
+			"request_id", reqID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"query", r.URL.RawQuery,
+			"client_ip", clientIP,
 		)
 
 		ctx := logging.WithLogger(r.Context(), logger)
@@ -46,8 +46,8 @@ func LoggingMiddleware(baseLogger *slog.Logger, recorder *metrics.Recorder, next
 		}
 
 		logger.Info("request complete",
-			slog.Int(logging.FieldStatusCode, ww.status),
-			slog.Int64(logging.FieldDurationMS, duration.Milliseconds()),
+			logging.FieldStatusCode, ww.status,
+			logging.FieldDurationMS, duration.Milliseconds(),
 		)
 	})
 }

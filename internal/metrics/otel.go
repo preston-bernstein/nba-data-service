@@ -61,7 +61,7 @@ func Setup(ctx context.Context, cfg TelemetryConfig) (*Recorder, http.Handler, f
 		resource.WithAttributes(semconv.ServiceName(cfg.ServiceName)),
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 
 	opts = append(opts, sdkmetric.WithResource(res))
@@ -88,7 +88,7 @@ func buildOTLPReader(ctx context.Context, endpoint string, insecure bool) (sdkme
 	}
 	otlpExp, err := otlpmetrichttp.New(ctx, otlpOpts...)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	return sdkmetric.NewPeriodicReader(otlpExp, sdkmetric.WithInterval(15*time.Second)), nil
 }
@@ -112,7 +112,7 @@ func prometheusComponents() (sdkmetric.Reader, http.Handler, error) {
 	reg := prometheus.NewRegistry()
 	promExp, err := promexporter.New(promexporter.WithRegisterer(reg))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	return promExp, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), nil
 }
@@ -123,44 +123,44 @@ func newOtelInstruments(provider metric.MeterProvider) (*otelInstruments, error)
 
 	requests, err := meter.Int64Counter("http_requests_total")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	requestLatency, err := meter.Float64Histogram("http_request_duration_ms")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 
 	providerAttempts, err := meter.Int64Counter("provider_attempts_total")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	providerErrors, err := meter.Int64Counter("provider_errors_total")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	providerLatency, err := meter.Float64Histogram("provider_duration_ms")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	rateLimitHits, err := meter.Int64Counter("provider_rate_limit_hits_total")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	retryAfter, err := meter.Float64Histogram("provider_retry_after_ms")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	pollerCycles, err := meter.Int64Counter("poller_cycles_total")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	pollerErrors, err := meter.Int64Counter("poller_errors_total")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	pollerLatency, err := meter.Float64Histogram("poller_cycle_duration_ms")
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 
 	return &otelInstruments{

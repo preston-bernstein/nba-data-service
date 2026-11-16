@@ -119,25 +119,25 @@ func (w *Writer) writeSnapshot(kind snapshotKind, date string, payload any, page
 		pageNum = page[0]
 	}
 	target := w.snapshotPath(kind, date, pageNum)
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil { //nolint:gosec // G301: snapshot mode kept as is; changing it alters file access
+		return err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 
 	tmp := target + ".tmp"
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 
-	if existing, err := os.ReadFile(target); err == nil && bytes.Equal(existing, data) {
+	if existing, err := os.ReadFile(target); err == nil && bytes.Equal(existing, data) { //nolint:gosec // G304: path comes from config or a test temp dir
 		return w.updateManifest(kind, date)
 	}
 
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
+	if err := os.WriteFile(tmp, data, 0o644); err != nil { //nolint:gosec // G306: snapshot mode kept as is; changing it alters file access
+		return err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	if err := os.Rename(tmp, target); err != nil {
-		return err
+		return err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 
 	return w.updateManifest(kind, date)
@@ -160,8 +160,7 @@ func (w *Writer) updateManifest(kind snapshotKind, date string) error {
 		return err
 	}
 
-	switch kind {
-	case kindGames:
+	if kind == kindGames {
 		m.Games.Dates = pruned
 		m.Games.LastRefreshed = now
 		m.Retention.GamesDays = w.retentionDays
@@ -186,7 +185,7 @@ func (w *Writer) listDates(kind snapshotKind) ([]string, error) {
 		if os.IsNotExist(err) {
 			return []string{}, nil
 		}
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	var (
 		dates []string

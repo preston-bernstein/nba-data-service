@@ -1,6 +1,7 @@
 package requestutil
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,13 +29,13 @@ func TestClientIP(t *testing.T) {
 		t.Fatalf("expected empty for nil request, got %q", got)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
 	if got := ClientIP(req); got != "1.2.3.4" {
 		t.Fatalf("expected first forwarded address, got %s", got)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "9.9.9.9:1234"
 	if got := ClientIP(req); got != "9.9.9.9:1234" {
 		t.Fatalf("expected remote addr fallback, got %s", got)

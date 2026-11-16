@@ -146,7 +146,7 @@ func (p *Poller) Stop(ctx context.Context) error {
 	case <-p.stopped:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return ctx.Err() //nolint:wrapcheck // callers compare the context sentinel
 	}
 }
 

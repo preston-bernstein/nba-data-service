@@ -59,7 +59,7 @@ func TestServeHelpers(t *testing.T) {
 		t.Fatalf("expected ok=true")
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/req", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/req", nil)
 	rr2 := ServeRequest(handler, req)
 	AssertStatus(t, rr2, http.StatusCreated)
 }
@@ -69,7 +69,7 @@ func TestSnapshotHelpers(t *testing.T) {
 	date := time.Now().UTC().Format(time.DateOnly)
 	WriteSnapshot(t, w, date)
 	path := SnapshotPath(w, date)
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path comes from config or a test temp dir
 	if err != nil {
 		t.Fatalf("expected snapshot file, got %v", err)
 	}

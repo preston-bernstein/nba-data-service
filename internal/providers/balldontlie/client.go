@@ -66,7 +66,7 @@ func (c *Client) FetchGames(ctx context.Context, date string, tz string) ([]doma
 	decode := func(dec *json.Decoder) ([]domaingames.Game, int, error) {
 		var payload gamesResponse
 		if err := dec.Decode(&payload); err != nil {
-			return nil, 0, err
+			return nil, 0, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 		}
 		mapped := make([]domaingames.Game, 0, len(payload.Data))
 		for _, g := range payload.Data {
@@ -85,7 +85,7 @@ func (c *Client) FetchGames(ctx context.Context, date string, tz string) ([]doma
 func (c *Client) buildRequest(ctx context.Context, date string, page int, loc *time.Location) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/games", nil)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 
 	q := req.URL.Query()
@@ -145,7 +145,7 @@ func fetchPaged[T any](
 
 		resp, err := doer.Do(req)
 		if err != nil {
-			return nil, err
+			return nil, err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 		}
 
 		if resp.StatusCode != http.StatusOK {
@@ -174,7 +174,7 @@ func fetchPaged[T any](
 		if pageDelay > 0 {
 			select {
 			case <-ctx.Done():
-				return all, ctx.Err()
+				return all, ctx.Err() //nolint:wrapcheck // callers compare the context sentinel
 			case <-time.After(pageDelay):
 			}
 		}

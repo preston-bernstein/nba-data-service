@@ -90,7 +90,7 @@ func (b *BlockingHTTPServer) Shutdown(ctx context.Context) error {
 	b.ShutdownCalls++
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return ctx.Err() //nolint:wrapcheck // callers compare the context sentinel
 	case <-b.Unblock:
 		return nil
 	}

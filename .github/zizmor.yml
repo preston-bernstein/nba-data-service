@@ -1,0 +1,10 @@
+# zizmor config. Pack: github-actions, rule gha-zizmor.
+# The allow-list stops a new third-party action from slipping in. Add an action here in the same PR that uses it.
+rules:
+  forbidden-uses:
+    config:
+      allow:
+        - actions/checkout
+        - actions/setup-go
+        - codecov/codecov-action
+        - preston-bernstein/ci-workflows/.github/workflows/actions-lint.yml
