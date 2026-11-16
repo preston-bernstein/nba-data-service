@@ -9,14 +9,14 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
-	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
+	"github.com/preston-bernstein/nba-data-service/internal/gamedate"
 )
 
 func TestWriterWritesSnapshotAndManifest(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWriter(dir, 10)
 
-	today := timeutil.FormatDate(time.Now())
+	today := gamedate.FormatDate(time.Now())
 	snap := domaingames.TodayResponse{
 		Date:  today,
 		Games: []domaingames.Game{{ID: "a"}, {ID: "b"}},
@@ -48,7 +48,7 @@ func TestWriterWritesSnapshotAndManifest(t *testing.T) {
 func TestWriteGamesSnapshotSetsDateAndSorts(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWriter(dir, 10000)
-	date := timeutil.FormatDate(time.Now().UTC())
+	date := gamedate.FormatDate(time.Now().UTC())
 	gamesSnap := domaingames.TodayResponse{
 		Games: []domaingames.Game{
 			{ID: "b"},
@@ -58,7 +58,7 @@ func TestWriteGamesSnapshotSetsDateAndSorts(t *testing.T) {
 	if err := w.WriteGamesSnapshot(date, gamesSnap); err != nil {
 		t.Fatalf("write games snapshot failed: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "games", date+".json")) //nolint:gosec // G304: path comes from config or a test temp dir
+	data, err := os.ReadFile(filepath.Clean(filepath.Join(dir, "games", date+".json")))
 	if err != nil {
 		t.Fatalf("expected games snapshot file: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestWriteSnapshotRequiresDateAndWriter(t *testing.T) {
 
 func TestNewWriterDefaultsRetention(t *testing.T) {
 	w := NewWriter(t.TempDir(), 0)
-	date := timeutil.FormatDate(time.Now().UTC())
+	date := gamedate.FormatDate(time.Now().UTC())
 	if err := w.WriteGamesSnapshot(date, domaingames.TodayResponse{Games: []domaingames.Game{{ID: "g1"}}}); err != nil {
 		t.Fatalf("expected snapshot write with default retention, got %v", err)
 	}
@@ -107,16 +107,16 @@ func TestBasePathHandlesNil(t *testing.T) {
 func TestPruneOldSnapshotsRemovesExpiredAndKeepsInvalid(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWriter(dir, 1)
-	old := timeutil.FormatDate(time.Now().AddDate(0, 0, -3))
-	recent := timeutil.FormatDate(time.Now())
+	old := gamedate.FormatDate(time.Now().AddDate(0, 0, -3))
+	recent := gamedate.FormatDate(time.Now())
 	invalid := "not-a-date"
 
 	writeFile := func(date string) {
 		path := filepath.Join(dir, "games", date+".json")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: test fixture in a temp dir
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			t.Fatalf("mkdir failed: %v", err)
 		}
-		if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write failed: %v", err)
 		}
 	}
@@ -146,15 +146,15 @@ func TestPruneOldSnapshotsRemovesExpiredAndKeepsInvalid(t *testing.T) {
 func TestPruneExpiredGamesSnapshotsRemovesStaleAndUpdatesManifest(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWriter(dir, 2)
-	old := timeutil.FormatDate(time.Now().AddDate(0, 0, -3))
-	recent := timeutil.FormatDate(time.Now())
+	old := gamedate.FormatDate(time.Now().AddDate(0, 0, -3))
+	recent := gamedate.FormatDate(time.Now())
 
 	writeFile := func(date string) {
 		path := filepath.Join(dir, "games", date+".json")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: test fixture in a temp dir
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			t.Fatalf("mkdir failed: %v", err)
 		}
-		if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write failed: %v", err)
 		}
 	}
@@ -189,10 +189,10 @@ func TestDeleteAllGamesSnapshotsRemovesAllAndClearsManifest(t *testing.T) {
 	dates := []string{"2024-01-01", "2024-01-02", "2024-01-03"}
 	for _, d := range dates {
 		path := filepath.Join(dir, "games", d+".json")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: test fixture in a temp dir
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			t.Fatalf("mkdir failed: %v", err)
 		}
-		if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write failed: %v", err)
 		}
 	}
@@ -219,13 +219,13 @@ func TestDeleteAllGamesSnapshotsNilWriter(t *testing.T) {
 
 func TestListDatesIgnoresNonJSONAndDirs(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "games", "nested"), 0o755); err != nil { //nolint:gosec // G301: test fixture in a temp dir
+	if err := os.MkdirAll(filepath.Join(dir, "games", "nested"), 0o750); err != nil {
 		t.Fatalf("failed to create nested dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "games", "2024-01-01.json"), []byte("{}"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+	if err := os.WriteFile(filepath.Join(dir, "games", "2024-01-01.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("failed to write snapshot: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "games", "ignore.txt"), []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+	if err := os.WriteFile(filepath.Join(dir, "games", "ignore.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("failed to write extra file: %v", err)
 	}
 
@@ -267,7 +267,7 @@ func TestContainsDate(t *testing.T) {
 
 func TestDeleteAllGamesSnapshotsReturnsErrorWhenListDatesFails(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("failed to create games file: %v", err)
 	}
 	w := NewWriter(dir, 7)
@@ -278,7 +278,7 @@ func TestDeleteAllGamesSnapshotsReturnsErrorWhenListDatesFails(t *testing.T) {
 
 func TestPruneExpiredGamesSnapshotsReturnsErrorWhenListDatesFails(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("failed to create games file: %v", err)
 	}
 	w := NewWriter(dir, 7)
@@ -289,7 +289,7 @@ func TestPruneExpiredGamesSnapshotsReturnsErrorWhenListDatesFails(t *testing.T) 
 
 func TestUpdateManifestReturnsErrorWhenListDatesFails(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("failed to create games file: %v", err)
 	}
 	w := NewWriter(dir, 7)
@@ -301,7 +301,7 @@ func TestUpdateManifestReturnsErrorWhenListDatesFails(t *testing.T) {
 func TestUpdateManifestAddsDateWhenMissing(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWriter(dir, 10000)
-	date := timeutil.FormatDate(time.Now().UTC())
+	date := gamedate.FormatDate(time.Now().UTC())
 	if err := w.updateManifest(kindGames, date); err != nil {
 		t.Fatalf("updateManifest failed: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestUpdateManifestAddsDateWhenMissing(t *testing.T) {
 func TestWriteSnapshotSkipsRewriteWhenUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWriter(dir, 10000)
-	date := timeutil.FormatDate(time.Now().UTC())
+	date := gamedate.FormatDate(time.Now().UTC())
 	payload := map[string]string{"id": "same"}
 
 	if err := w.writeSnapshot(kindGames, date, payload); err != nil {
@@ -369,7 +369,7 @@ func TestWriteSnapshotWriteFileError(t *testing.T) {
 func TestWriteSnapshotRenameError(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "games", "2024-01-07.json")
-	if err := os.MkdirAll(target, 0o755); err != nil { //nolint:gosec // G301: test fixture in a temp dir
+	if err := os.MkdirAll(target, 0o750); err != nil {
 		t.Fatalf("failed to create target dir: %v", err)
 	}
 	w := NewWriter(dir, 7)

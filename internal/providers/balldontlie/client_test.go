@@ -14,6 +14,59 @@ import (
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 )
 
+// firstPageBody and secondPageBody are two pages of a balldontlie games response.
+const firstPageBody = `{
+	"data": [
+		{
+			"id": 10,
+			"date": "2024-01-02",
+			"datetime": "2024-01-02T15:00:00Z",
+			"status": "Final",
+			"time": "Final",
+			"period": 4,
+			"postseason": false,
+			"home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" },
+			"visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" },
+			"home_team_score": 110,
+			"visitor_team_score": 102,
+			"season": 2023
+		}
+	],
+	"meta": {
+		"total_pages": 2
+	}
+}`
+
+const secondPageBody = `{
+	"data": [
+		{
+			"id": 11,
+			"date": "2024-01-03",
+			"datetime": "2024-01-03T15:00:00Z",
+			"status": "Final",
+			"time": "Final",
+			"period": 4,
+			"postseason": false,
+			"home_team": { "id": 3, "full_name": "Another Team", "abbreviation": "ANT", "city": "Another City", "conference": "East", "division": "Central", "name": "Another" },
+			"visitor_team": { "id": 4, "full_name": "Away Team 2", "abbreviation": "AW2", "city": "Away City 2", "conference": "West", "division": "Northwest", "name": "Away2" },
+			"home_team_score": 120,
+			"visitor_team_score": 115,
+			"season": 2023
+		}
+	],
+	"meta": {
+		"total_pages": 2
+	}
+}`
+
+func okResponse(body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+	}
+}
+
 func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 	fixed := time.Date(2024, 1, 2, 3, 0, 0, 0, time.UTC) // should still yield 2024-01-01 in America/New_York
 	var capturedAuth string
@@ -26,57 +79,11 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 		capturedQueries = append(capturedQueries, req.URL.RawQuery)
 		capturedAuth = req.Header.Get("Authorization")
 
-		var body string
+		body := secondPageBody
 		if len(capturedQueries) == 1 {
-			body = `{
-				"data": [
-					{
-						"id": 10,
-						"date": "2024-01-02",
-						"datetime": "2024-01-02T15:00:00Z",
-						"status": "Final",
-						"time": "Final",
-						"period": 4,
-						"postseason": false,
-						"home_team": { "id": 1, "full_name": "Home Team", "abbreviation": "HTM", "city": "Home City", "conference": "East", "division": "Atlantic", "name": "Home" },
-						"visitor_team": { "id": 2, "full_name": "Away Team", "abbreviation": "AWY", "city": "Away City", "conference": "West", "division": "Pacific", "name": "Away" },
-						"home_team_score": 110,
-						"visitor_team_score": 102,
-						"season": 2023
-					}
-				],
-				"meta": {
-					"total_pages": 2
-				}
-			}`
-		} else {
-			body = `{
-				"data": [
-					{
-						"id": 11,
-						"date": "2024-01-03",
-						"datetime": "2024-01-03T15:00:00Z",
-						"status": "Final",
-						"time": "Final",
-						"period": 4,
-						"postseason": false,
-						"home_team": { "id": 3, "full_name": "Another Team", "abbreviation": "ANT", "city": "Another City", "conference": "East", "division": "Central", "name": "Another" },
-						"visitor_team": { "id": 4, "full_name": "Away Team 2", "abbreviation": "AW2", "city": "Away City 2", "conference": "West", "division": "Northwest", "name": "Away2" },
-						"home_team_score": 120,
-						"visitor_team_score": 115,
-						"season": 2023
-					}
-				],
-				"meta": {
-					"total_pages": 2
-				}
-			}`
+			body = firstPageBody
 		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
+		return okResponse(body), nil
 	})
 
 	client := NewClient(Config{
@@ -99,9 +106,18 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 	if len(capturedQueries) != 2 {
 		t.Fatalf("expected 2 requests (pagination), got %d", len(capturedQueries))
 	}
-	q, err := url.ParseQuery(capturedQueries[0])
+	assertFirstPageQuery(t, capturedQueries[0])
+	if len(games) != 2 {
+		t.Fatalf("expected games from both pages, got %d", len(games))
+	}
+	assertMappedFirstGame(t, games[0])
+}
+
+func assertFirstPageQuery(t *testing.T, rawQuery string) {
+	t.Helper()
+	q, err := url.ParseQuery(rawQuery)
 	if err != nil {
-		t.Fatalf("failed parsing query %s: %v", capturedQueries[0], err)
+		t.Fatalf("failed parsing query %s: %v", rawQuery, err)
 	}
 	if q.Get("per_page") != "100" {
 		t.Fatalf("expected per_page=100, got %s", q.Get("per_page"))
@@ -112,11 +128,10 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 	if q.Get("page") != "1" {
 		t.Fatalf("expected page=1, got %s", q.Get("page"))
 	}
-	if len(games) != 2 {
-		t.Fatalf("expected games from both pages, got %d", len(games))
-	}
+}
 
-	game := games[0]
+func assertMappedFirstGame(t *testing.T, game domaingames.Game) {
+	t.Helper()
 	if game.ID != "balldontlie-10" || game.Provider != "balldontlie" {
 		t.Fatalf("unexpected game identifiers %+v", game)
 	}
@@ -129,6 +144,11 @@ func TestFetchGamesHitsAPIAndMapsResponse(t *testing.T) {
 	if game.StatusKind != domaingames.StatusFinal {
 		t.Fatalf("unexpected status kind %s", game.StatusKind)
 	}
+	assertMappedFirstGameMeta(t, game)
+}
+
+func assertMappedFirstGameMeta(t *testing.T, game domaingames.Game) {
+	t.Helper()
 	if game.Meta.UpstreamGameID != 10 || game.Meta.Season != "2023" {
 		t.Fatalf("unexpected meta %+v", game.Meta)
 	}
@@ -367,44 +387,45 @@ func TestParseRetryAfter(t *testing.T) {
 	}
 }
 
+var rateLimitCases = []struct {
+	name        string
+	status      int
+	headers     http.Header
+	expectedRL  bool
+	expectedRA  time.Duration
+	expectedRem string
+}{
+	{
+		name:        "429 with retry after",
+		status:      http.StatusTooManyRequests,
+		headers:     http.Header{"Retry-After": []string{"5"}, "X-Rate-Limit-Remaining": []string{"0"}},
+		expectedRL:  true,
+		expectedRA:  5 * time.Second,
+		expectedRem: "0",
+	},
+	{
+		name:        "503 treated as rate limited",
+		status:      http.StatusServiceUnavailable,
+		headers:     http.Header{},
+		expectedRL:  true,
+		expectedRA:  0,
+		expectedRem: "",
+	},
+	{
+		name:        "non rate limit status",
+		status:      http.StatusBadGateway,
+		headers:     http.Header{},
+		expectedRL:  false,
+		expectedRA:  0,
+		expectedRem: "",
+	},
+}
+
 func TestRateLimitDetails(t *testing.T) {
 	now := time.Unix(0, 0)
 	body := []byte("slow down")
-	tests := []struct {
-		name        string
-		status      int
-		headers     http.Header
-		expectedRL  bool
-		expectedRA  time.Duration
-		expectedRem string
-	}{
-		{
-			name:        "429 with retry after",
-			status:      http.StatusTooManyRequests,
-			headers:     http.Header{"Retry-After": []string{"5"}, "X-Rate-Limit-Remaining": []string{"0"}},
-			expectedRL:  true,
-			expectedRA:  5 * time.Second,
-			expectedRem: "0",
-		},
-		{
-			name:        "503 treated as rate limited",
-			status:      http.StatusServiceUnavailable,
-			headers:     http.Header{},
-			expectedRL:  true,
-			expectedRA:  0,
-			expectedRem: "",
-		},
-		{
-			name:        "non rate limit status",
-			status:      http.StatusBadGateway,
-			headers:     http.Header{},
-			expectedRL:  false,
-			expectedRA:  0,
-			expectedRem: "",
-		},
-	}
 
-	for _, tt := range tests {
+	for _, tt := range rateLimitCases {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := &http.Response{
 				StatusCode: tt.status,

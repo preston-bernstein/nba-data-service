@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/preston-bernstein/nba-data-service/internal/http/requestutil"
+	"github.com/preston-bernstein/nba-data-service/internal/http/requestmeta"
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 )
@@ -20,10 +20,10 @@ func LoggingMiddleware(baseLogger *slog.Logger, recorder *metrics.Recorder, next
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		reqID := requestutil.SanitizeRequestID(r.Header.Get("X-Request-ID"))
+		reqID := requestmeta.SanitizeRequestID(r.Header.Get("X-Request-ID"))
 		w.Header().Set("X-Request-ID", reqID)
 
-		clientIP := requestutil.ClientIP(r)
+		clientIP := requestmeta.ClientIP(r)
 
 		logger := baseLogger.With(
 			"request_id", reqID,

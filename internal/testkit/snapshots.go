@@ -1,6 +1,7 @@
-package testutil
+package testkit
 
 import (
+	"fmt"
 	"testing"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
@@ -22,12 +23,16 @@ func WriteSnapshot(t *testing.T, w *snapshots.Writer, date string) {
 }
 
 func writeSnapshotPayload(w *snapshots.Writer, date string) error {
-	return w.WriteGamesSnapshot(date, domaingames.TodayResponse{ //nolint:wrapcheck // thin pass-through; callers see the original error
+	err := w.WriteGamesSnapshot(date, domaingames.TodayResponse{
 		Date: date,
 		Games: []domaingames.Game{
 			{ID: date},
 		},
 	})
+	if err != nil {
+		return fmt.Errorf("write games snapshot %s: %w", date, err)
+	}
+	return nil
 }
 
 // SnapshotPath returns the expected file path for a snapshot date.

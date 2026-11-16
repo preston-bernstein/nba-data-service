@@ -21,13 +21,13 @@ func buildSnapshots(cfg config.Config, provider providers.GameProvider, logger *
 	writer := snapshots.NewWriter(basePath, cfg.Snapshots.RetentionDays)
 	store := snapshots.NewFSStore(basePath)
 
-	syncer := snapshots.NewSyncer(provider, writer, snapshots.SyncConfig{
+	syncer := snapshots.NewSyncer(snapshots.SyncDeps{Provider: provider, Writer: writer, Logger: logger, Location: loc}, snapshots.SyncConfig{
 		Enabled:      cfg.Snapshots.Enabled,
 		Days:         cfg.Snapshots.Days,
 		FutureDays:   cfg.Snapshots.FutureDays,
 		Interval:     cfg.Snapshots.Interval,
 		DailyHourUTC: cfg.Snapshots.DailyHourUTC,
-	}, logger, loc)
+	})
 	if cfg.Snapshots.Enabled {
 		go syncer.Run(context.Background())
 	}

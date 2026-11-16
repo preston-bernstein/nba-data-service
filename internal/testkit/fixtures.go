@@ -1,4 +1,4 @@
-package testutil
+package testkit
 
 import (
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"

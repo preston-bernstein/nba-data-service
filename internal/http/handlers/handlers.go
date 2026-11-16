@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	nethttp "net/http"
@@ -10,9 +9,9 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/gamedate"
 	"github.com/preston-bernstein/nba-data-service/internal/poller"
 	"github.com/preston-bernstein/nba-data-service/internal/snapshots"
-	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 type nowFunc func() time.Time
@@ -52,7 +51,7 @@ func (h *Handler) ServeHTTP(w nethttp.ResponseWriter, r *nethttp.Request) {
 	case strings.HasPrefix(r.URL.Path, "/games/"):
 		h.GameByID(w, r)
 	default:
-		writeError(w, r, nethttp.StatusNotFound, "not found", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusNotFound, message: "not found"}, h.logger)
 	}
 }
 
@@ -61,7 +60,7 @@ func (h *Handler) Health(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 	if err := r.Context().Err(); err != nil {
-		writeError(w, r, nethttp.StatusServiceUnavailable, "shutting down", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusServiceUnavailable, message: "shutting down"}, h.logger)
 		return
 	}
 	resp := map[string]string{"status": "ok"}
@@ -85,7 +84,7 @@ func (h *Handler) Ready(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if msg == "" {
 		msg = "not ready"
 	}
-	writeError(w, r, nethttp.StatusServiceUnavailable, msg, h.logger)
+	writeError(w, r, apiError{status: nethttp.StatusServiceUnavailable, message: msg}, h.logger)
 }
 
 // GamesToday returns the snapshot of games for a requested date.
@@ -95,27 +94,27 @@ func (h *Handler) GamesToday(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 	dateParam := r.URL.Query().Get("date")
 	if dateParam == "" {
-		writeError(w, r, nethttp.StatusBadRequest, "date query param required (expected YYYY-MM-DD)", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusBadRequest, message: "date query param required (expected YYYY-MM-DD)"}, h.logger)
 		return
 	}
 	now := h.now().In(h.loc)
 	logger := loggerFromContext(r, h.logger)
 
-	_, err := timeutil.ParseDate(dateParam)
+	_, err := gamedate.ParseDate(dateParam)
 	if err != nil {
-		writeError(w, r, nethttp.StatusBadRequest, "invalid date format (expected YYYY-MM-DD)", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusBadRequest, message: "invalid date format (expected YYYY-MM-DD)"}, h.logger)
 		return
 	}
-	minDate := timeutil.FormatDate(now.AddDate(0, 0, -7))
-	maxDate := timeutil.FormatDate(now.AddDate(0, 0, 7))
+	minDate := gamedate.FormatDate(now.AddDate(0, 0, -7))
+	maxDate := gamedate.FormatDate(now.AddDate(0, 0, 7))
 	if dateParam < minDate || dateParam > maxDate {
-		writeError(w, r, nethttp.StatusBadRequest, "date must be within 7 days of today", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusBadRequest, message: "date must be within 7 days of today"}, h.logger)
 		return
 	}
 
 	snap, err := h.loadSnapshot(dateParam)
 	if err != nil {
-		writeError(w, r, nethttp.StatusBadGateway, "snapshot unavailable", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusBadGateway, message: "snapshot unavailable"}, h.logger)
 		return
 	}
 	if logger != nil {
@@ -134,25 +133,25 @@ func (h *Handler) GameByID(w nethttp.ResponseWriter, r *nethttp.Request) {
 	// Expect path: /games/{id}
 	path := strings.TrimPrefix(r.URL.Path, "/games")
 	if path == "" || path == "/" {
-		writeError(w, r, nethttp.StatusBadRequest, "invalid game id", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusBadRequest, message: "invalid game id"}, h.logger)
 		return
 	}
 
 	idRaw := strings.TrimPrefix(path, "/")
 	id, err := url.PathUnescape(idRaw)
 	if err != nil || id == "" || id == "games" || strings.ContainsAny(id, " \t/") {
-		writeError(w, r, nethttp.StatusBadRequest, "invalid game id", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusBadRequest, message: "invalid game id"}, h.logger)
 		return
 	}
 
 	if h.snaps == nil {
-		writeError(w, r, nethttp.StatusBadGateway, "snapshot store not configured", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusBadGateway, message: "snapshot store not configured"}, h.logger)
 		return
 	}
-	today := timeutil.FormatDate(h.now().In(h.loc))
+	today := gamedate.FormatDate(h.now().In(h.loc))
 	game, ok := h.snaps.FindGameByID(today, id)
 	if !ok {
-		writeError(w, r, nethttp.StatusNotFound, "game not found", h.logger)
+		writeError(w, r, apiError{status: nethttp.StatusNotFound, message: "game not found"}, h.logger)
 		return
 	}
 
@@ -163,9 +162,5 @@ func (h *Handler) loadSnapshot(date string) (domaingames.TodayResponse, error) {
 	if h.snaps == nil {
 		return domaingames.TodayResponse{}, errors.New("snapshot store not configured")
 	}
-	ctx := context.Background()
-	if err := ctx.Err(); err != nil {
-		return domaingames.TodayResponse{}, err //nolint:wrapcheck // callers compare the context sentinel
-	}
-	return h.snaps.LoadGames(date) //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
+	return h.snaps.LoadGames(date) //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 }

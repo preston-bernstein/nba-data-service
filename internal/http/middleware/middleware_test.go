@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
-	"github.com/preston-bernstein/nba-data-service/internal/testutil"
+	"github.com/preston-bernstein/nba-data-service/internal/testkit"
 )
 
 func TestLoggingMiddlewareSetsRequestIDAndRecordsMetrics(t *testing.T) {
-	logger, _ := testutil.NewBufferLogger()
+	logger, _ := testkit.NewBufferLogger()
 	rec := metrics.NewRecorder()
 	nextCalled := false
 
@@ -27,12 +27,12 @@ func TestLoggingMiddlewareSetsRequestIDAndRecordsMetrics(t *testing.T) {
 	})
 
 	handler := LoggingMiddleware(logger, rec, next)
-	rr := testutil.Serve(handler, http.MethodGet, "/games?date=2024-01-01", nil)
+	rr := testkit.Serve(handler, http.MethodGet, "/games?date=2024-01-01", nil)
 
 	if !nextCalled {
 		t.Fatalf("expected next handler to be called")
 	}
-	testutil.AssertStatus(t, rr, http.StatusTeapot)
+	testkit.AssertStatus(t, rr, http.StatusTeapot)
 	if rec.ProviderCalls("http") != 0 {
 		t.Fatalf("expected provider metrics untouched")
 	}
@@ -42,7 +42,7 @@ func TestLoggingMiddlewareSetsRequestIDAndRecordsMetrics(t *testing.T) {
 }
 
 func TestLoggingMiddlewareGeneratesRequestIDWhenMissing(t *testing.T) {
-	logger, _ := testutil.NewBufferLogger()
+	logger, _ := testkit.NewBufferLogger()
 	rec := metrics.NewRecorder()
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := RequestIDFromContext(r.Context()); got == "" {
@@ -52,16 +52,16 @@ func TestLoggingMiddlewareGeneratesRequestIDWhenMissing(t *testing.T) {
 	})
 
 	handler := LoggingMiddleware(logger, rec, next)
-	rr := testutil.Serve(handler, http.MethodGet, "/games?date=2024-01-01&foo=bar", nil)
+	rr := testkit.Serve(handler, http.MethodGet, "/games?date=2024-01-01&foo=bar", nil)
 
-	testutil.AssertStatus(t, rr, http.StatusOK)
+	testkit.AssertStatus(t, rr, http.StatusOK)
 	if got := rr.Header().Get("X-Request-ID"); got == "" {
 		t.Fatalf("expected X-Request-ID header to be set")
 	}
 }
 
 func TestLoggingMiddlewareUsesForwardedFor(t *testing.T) {
-	logger, _ := testutil.NewBufferLogger()
+	logger, _ := testkit.NewBufferLogger()
 	rec := metrics.NewRecorder()
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -70,9 +70,9 @@ func TestLoggingMiddlewareUsesForwardedFor(t *testing.T) {
 	handler := LoggingMiddleware(logger, rec, next)
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games?date=2024-01-01", nil)
 	req.Header.Set("X-Forwarded-For", "198.51.100.1")
-	rr := testutil.ServeRequest(handler, req)
+	rr := testkit.ServeRequest(handler, req)
 
-	testutil.AssertStatus(t, rr, http.StatusOK)
+	testkit.AssertStatus(t, rr, http.StatusOK)
 }
 
 // Ensure responseWriter defaults status correctly.

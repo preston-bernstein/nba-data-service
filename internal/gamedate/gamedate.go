@@ -1,4 +1,4 @@
-package timeutil
+package gamedate
 
 import "time"
 
@@ -7,7 +7,7 @@ const DateLayout = "2006-01-02"
 
 // ParseDate parses a YYYY-MM-DD date string.
 func ParseDate(value string) (time.Time, error) {
-	return time.Parse(DateLayout, value) //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
+	return time.Parse(DateLayout, value) //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 }
 
 // FormatDate formats a time as YYYY-MM-DD in its current location.

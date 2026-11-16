@@ -5,11 +5,17 @@ import (
 	"log/slog"
 )
 
-// logWithProvider emits a log entry if logger is non-nil and always includes provider name.
-func logWithProvider(ctx context.Context, logger *slog.Logger, level slog.Level, provider string, msg string, args ...any) {
-	if logger == nil {
+// providerLogger logs through a logger that may be nil and tags every entry with the provider name.
+type providerLogger struct {
+	logger   *slog.Logger
+	provider string
+}
+
+// log emits a log entry if the logger is non-nil and always includes the provider name.
+func (l providerLogger) log(ctx context.Context, level slog.Level, msg string, args ...any) {
+	if l.logger == nil {
 		return
 	}
-	args = append(args, slog.String("provider", provider))
-	logger.Log(ctx, level, msg, args...)
+	args = append(args, slog.String("provider", l.provider))
+	l.logger.Log(ctx, level, msg, args...)
 }
