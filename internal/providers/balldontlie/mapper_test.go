@@ -25,6 +25,13 @@ func TestMapGameTransformsFields(t *testing.T) {
 
 	game := mapGame(resp)
 
+	assertMappedStatusAndScore(t, game)
+	assertMappedMeta(t, game)
+	assertMappedTeams(t, game)
+}
+
+func assertMappedStatusAndScore(t *testing.T, game games.Game) {
+	t.Helper()
 	if game.ID != "balldontlie-42" || game.Provider != "balldontlie" {
 		t.Fatalf("unexpected id/provider: %+v", game)
 	}
@@ -37,12 +44,20 @@ func TestMapGameTransformsFields(t *testing.T) {
 	if game.Score.Home != 55 || game.Score.Away != 50 {
 		t.Fatalf("unexpected scores %+v", game.Score)
 	}
+}
+
+func assertMappedMeta(t *testing.T, game games.Game) {
+	t.Helper()
 	if game.Meta.UpstreamGameID != 42 || game.Meta.Season != "2024" {
 		t.Fatalf("unexpected meta %+v", game.Meta)
 	}
 	if game.Meta.Period != 3 || !game.Meta.Postseason || game.Meta.Time != "Q3 05:00" {
 		t.Fatalf("unexpected meta extras %+v", game.Meta)
 	}
+}
+
+func assertMappedTeams(t *testing.T, game games.Game) {
+	t.Helper()
 	if game.HomeTeam.ID != "HMS" || game.AwayTeam.ID != "AWS" {
 		t.Fatalf("unexpected team ids home=%s away=%s", game.HomeTeam.ID, game.AwayTeam.ID)
 	}

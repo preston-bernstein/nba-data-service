@@ -1,4 +1,4 @@
-package requestutil
+package requestmeta
 
 import (
 	"crypto/rand"

@@ -17,18 +17,24 @@ func writeJSON(w http.ResponseWriter, status int, payload any, logger *slog.Logg
 	}
 }
 
-func writeError(w http.ResponseWriter, r *http.Request, status int, message string, logger *slog.Logger) {
+// apiError is an HTTP error response: a status code and the message shown to the client.
+type apiError struct {
+	status  int
+	message string
+}
+
+func writeError(w http.ResponseWriter, r *http.Request, apiErr apiError, logger *slog.Logger) {
 	reqID := requestID(r)
-	body := map[string]string{"error": message}
+	body := map[string]string{"error": apiErr.message}
 	if reqID != "" {
 		body["requestId"] = reqID
 	}
-	writeJSON(w, status, body, logger)
+	writeJSON(w, apiErr.status, body, logger)
 }
 
 func requireMethod(w http.ResponseWriter, r *http.Request, method string, logger *slog.Logger) bool {
 	if r.Method != method {
-		writeError(w, r, http.StatusMethodNotAllowed, "method not allowed", logger)
+		writeError(w, r, apiError{status: http.StatusMethodNotAllowed, message: "method not allowed"}, logger)
 		return false
 	}
 	return true

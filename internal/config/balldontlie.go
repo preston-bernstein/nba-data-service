@@ -4,7 +4,7 @@ import "time"
 
 const (
 	envBdlBaseURL   = "BALLDONTLIE_BASE_URL"
-	envBdlAPIKey    = "BALLDONTLIE_API_KEY" //nolint:gosec // G101: env var name, not a credential
+	envBdlKeyVar    = "BALLDONTLIE_API_KEY"
 	envBdlTimezone  = "BALLDONTLIE_TIMEZONE"
 	envBdlMaxPages  = "BALLDONTLIE_MAX_PAGES"
 	envBdlPageDelay = "BALLDONTLIE_PAGE_DELAY"
@@ -26,7 +26,7 @@ type BalldontlieConfig struct {
 func loadBalldontlie() BalldontlieConfig {
 	return BalldontlieConfig{
 		BaseURL:   envOrDefault(envBdlBaseURL, defaultBdlBaseURL),
-		APIKey:    envOrDefault(envBdlAPIKey, ""),
+		APIKey:    envOrDefault(envBdlKeyVar, ""),
 		Timezone:  envOrDefault(envBdlTimezone, defaultBdlTimezone),
 		MaxPages:  intEnvOrDefault(envBdlMaxPages, defaultBdlMaxPages),
 		PageDelay: durationEnvOrDefault(envBdlPageDelay, 0),

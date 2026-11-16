@@ -6,7 +6,7 @@ import (
 
 	"github.com/preston-bernstein/nba-data-service/internal/config"
 	"github.com/preston-bernstein/nba-data-service/internal/events"
-	"github.com/preston-bernstein/nba-data-service/internal/testutil"
+	"github.com/preston-bernstein/nba-data-service/internal/testkit"
 )
 
 func TestBuildPublisherDisabledWithoutBrokers(t *testing.T) {
@@ -23,9 +23,9 @@ func (c *closeSpy) Close()                                      { c.closed = tru
 
 func TestGracefulShutdownClosesPublisher(t *testing.T) {
 	spy := &closeSpy{}
-	srv := newServerWithDeps(config.Config{}, nil, &testutil.StubHTTPServer{}, &providerPoller{})
+	srv := newServerWithDeps(config.Config{}, nil, &testkit.StubHTTPServer{}, &providerPoller{})
 	srv.publisher = spy
-	srv.gracefulShutdown()
+	srv.gracefulShutdown(context.Background())
 	if !spy.closed {
 		t.Fatal("publisher not closed")
 	}

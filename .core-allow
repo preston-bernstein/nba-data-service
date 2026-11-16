@@ -1,7 +1,0 @@
-# Existing findings accepted in the pack-compliance pass. One per line: <check> <path> <reason>
-name internal/http/requestutil existing name; rename when the module is next reworked
-name internal/http/requestutil/requestutil.go existing name; rename when the module is next reworked
-name internal/logging/helpers.go existing name; rename when the module is next reworked
-name internal/testutil existing name; rename when the module is next reworked
-name internal/timeutil existing name; rename when the module is next reworked
-name internal/timeutil/timeutil.go existing name; rename when the module is next reworked

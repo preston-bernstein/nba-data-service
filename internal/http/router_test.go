@@ -6,8 +6,8 @@ import (
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/http/handlers"
+	"github.com/preston-bernstein/nba-data-service/internal/testkit"
 	"github.com/preston-bernstein/nba-data-service/internal/teststubs"
-	"github.com/preston-bernstein/nba-data-service/internal/testutil"
 )
 
 func TestRouterRoutesKnownPaths(t *testing.T) {
@@ -24,8 +24,8 @@ func TestRouterRoutesKnownPaths(t *testing.T) {
 	}
 
 	for path, expected := range cases {
-		rr := testutil.Serve(router, http.MethodGet, path, nil)
-		testutil.AssertStatus(t, rr, expected)
+		rr := testkit.Serve(router, http.MethodGet, path, nil)
+		testkit.AssertStatus(t, rr, expected)
 	}
 }
 
@@ -35,8 +35,8 @@ func TestRouterUnknownRouteReturns404(t *testing.T) {
 
 	router := NewRouter(h)
 
-	rr := testutil.Serve(router, http.MethodGet, "/does-not-exist", nil)
-	testutil.AssertStatus(t, rr, http.StatusNotFound)
+	rr := testkit.Serve(router, http.MethodGet, "/does-not-exist", nil)
+	testkit.AssertStatus(t, rr, http.StatusNotFound)
 }
 
 // StubSnapshotStore is defined in teststubs for reuse across packages.

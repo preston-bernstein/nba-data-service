@@ -23,5 +23,5 @@ func (f providerFactory) build(cfg config.Config) providers.GameProvider {
 	base := selectProvider(cfg, f.logger)
 	// Shared rate limiter to respect upstream quota (1/min default if poll interval is shorter).
 	limited := providers.NewRateLimitedProvider(base, time.Minute, f.logger)
-	return providers.NewRetryingProvider(limited, f.logger, f.metrics, normalizeProviderName(cfg.Provider, base), 0, 0)
+	return providers.NewRetryingProvider(limited, providers.RetryConfig{Logger: f.logger, Metrics: f.metrics, Name: normalizeProviderName(cfg.Provider, base)})
 }

@@ -33,7 +33,7 @@ func (f *fakePublisher) Close() {}
 
 func newPublishPoller(games []domaingames.Game, pub events.Publisher) (*Poller, *teststubs.StubProvider) {
 	prov := &teststubs.StubProvider{Games: games}
-	p := New(prov, nil, nil, nil, time.Hour, nil)
+	p := New(prov, nil, Options{Interval: time.Hour})
 	p.now = func() time.Time { return time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC) }
 	p.SetPublisher(pub)
 	return p, prov

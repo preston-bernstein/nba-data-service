@@ -7,9 +7,9 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/gamedate"
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
-	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 // Syncer backfills and prunes game snapshots on a schedule.
@@ -32,8 +32,16 @@ type SyncConfig struct {
 	DailyHourUTC int
 }
 
+// SyncDeps holds what a Syncer works with. A nil Location means UTC.
+type SyncDeps struct {
+	Provider providers.GameProvider
+	Writer   *Writer
+	Logger   *slog.Logger
+	Location *time.Location
+}
+
 // NewSyncer constructs a snapshot syncer for games.
-func NewSyncer(provider providers.GameProvider, writer *Writer, cfg SyncConfig, logger *slog.Logger, loc *time.Location) *Syncer {
+func NewSyncer(deps SyncDeps, cfg SyncConfig) *Syncer {
 	if cfg.Days <= 0 {
 		cfg.Days = 7
 	}
@@ -46,17 +54,17 @@ func NewSyncer(provider providers.GameProvider, writer *Writer, cfg SyncConfig, 
 	if cfg.DailyHourUTC < 0 || cfg.DailyHourUTC > 23 {
 		cfg.DailyHourUTC = 2
 	}
-	if loc == nil {
-		loc = time.UTC
+	if deps.Location == nil {
+		deps.Location = time.UTC
 	}
 
 	return &Syncer{
-		provider:  provider,
-		writer:    writer,
+		provider:  deps.Provider,
+		writer:    deps.Writer,
 		cfg:       cfg,
-		logger:    logger,
+		logger:    deps.Logger,
 		now:       time.Now,
-		loc:       loc,
+		loc:       deps.Location,
 		newTicker: time.NewTicker,
 	}
 }
@@ -136,12 +144,12 @@ func (s *Syncer) buildDates(now time.Time) []string {
 	// Always refresh today and the last (alwaysRefreshPastDays - 1) days so that
 	// when users look backwards they see final scores, not stale SCHEDULED snapshots.
 	for i := 0; i < alwaysRefreshPastDays && i < s.cfg.Days; i++ {
-		dates = append(dates, timeutil.FormatDate(now.AddDate(0, 0, -i)))
+		dates = append(dates, gamedate.FormatDate(now.AddDate(0, 0, -i)))
 	}
 
 	// Past window beyond the always-refresh range: only fetch if missing (startup/outage).
 	for i := alwaysRefreshPastDays; i <= s.cfg.Days; i++ {
-		date := timeutil.FormatDate(now.AddDate(0, 0, -i))
+		date := gamedate.FormatDate(now.AddDate(0, 0, -i))
 		if !s.hasSnapshot(date) {
 			dates = append(dates, date)
 		}
@@ -149,7 +157,7 @@ func (s *Syncer) buildDates(now time.Time) []string {
 
 	// Future window: prefetch missing only.
 	for i := 1; i <= s.cfg.FutureDays; i++ {
-		date := timeutil.FormatDate(now.AddDate(0, 0, i))
+		date := gamedate.FormatDate(now.AddDate(0, 0, i))
 		if !s.hasSnapshot(date) {
 			dates = append(dates, date)
 		}

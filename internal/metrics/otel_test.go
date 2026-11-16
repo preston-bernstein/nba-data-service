@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -278,14 +279,22 @@ func (m scriptedMeter) Int64Counter(name string, opts ...metric.Int64CounterOpti
 	if name == m.failCounter {
 		return nil, errors.New("counter fail")
 	}
-	return m.Meter.Int64Counter(name, opts...) //nolint:wrapcheck // thin pass-through; callers see the original error
+	c, err := m.Meter.Int64Counter(name, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("int64 counter %q: %w", name, err)
+	}
+	return c, nil
 }
 
 func (m scriptedMeter) Float64Histogram(name string, opts ...metric.Float64HistogramOption) (metric.Float64Histogram, error) {
 	if name == m.failHistogram {
 		return nil, errors.New("histogram fail")
 	}
-	return m.Meter.Float64Histogram(name, opts...) //nolint:wrapcheck // thin pass-through; callers see the original error
+	h, err := m.Meter.Float64Histogram(name, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("float64 histogram %q: %w", name, err)
+	}
+	return h, nil
 }
 
 type scriptedProvider struct {
