@@ -54,7 +54,7 @@ func NewRetryingProviderWithRNG(inner GameProvider, logger *slog.Logger, metrics
 	}
 
 	if rng == nil {
-		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+		rng = rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec // G404: retry jitter, not a security value
 	}
 
 	return &retryingProvider{
@@ -90,7 +90,7 @@ func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz strin
 		lastErr = err
 
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, ctxErr
+			return nil, ctxErr //nolint:wrapcheck // callers compare the context sentinel
 		}
 
 		if attempt == r.maxAttempts {
@@ -146,7 +146,7 @@ func (r *retryingProvider) sleep(ctx context.Context, delay time.Duration) error
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return ctx.Err() //nolint:wrapcheck // callers compare the context sentinel
 	case <-timer.C:
 		return nil
 	}

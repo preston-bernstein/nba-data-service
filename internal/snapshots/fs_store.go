@@ -47,16 +47,16 @@ func (s *FSStore) load(kind snapshotKind, date string, payload any) error {
 		return errors.New("snapshot date required")
 	}
 	path := filepath.Join(s.basePath, string(kind), fmt.Sprintf("%s.json", date))
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path comes from config or a test temp dir
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	defer func() {
 		_ = f.Close()
 	}()
 
 	if err := json.NewDecoder(f).Decode(payload); err != nil {
-		return err
+		return err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
 	return nil
 }

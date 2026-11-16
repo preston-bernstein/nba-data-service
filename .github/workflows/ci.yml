@@ -75,6 +75,44 @@ jobs:
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The writing gate lints the files that changed against main.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install gate tools
+        run: bash scripts/gate-tools/install.sh | tail -n 1 >> "$GITHUB_PATH"
+
+      - name: Core gate
+        run: bash scripts/core-validate.sh
+
+      - name: GitHub Actions gate
+        run: bash scripts/gha-validate.sh
+
+      - name: Go gate
+        run: bash scripts/go-validate.sh
+
+      - name: Docker gate
+        run: bash scripts/docker-validate.sh
+
+      - name: Writing gate
+        run: bash scripts/writing-validate.sh
+
+      - name: Logging gate
+        run: python3 -I scripts/logging-check.py .
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20

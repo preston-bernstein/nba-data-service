@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +14,7 @@ import (
 
 // Serve executes a request against the provided handler and returns the recorder.
 func Serve(h http.Handler, method, path string, body io.Reader) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, body)
+	req := httptest.NewRequestWithContext(context.Background(), method, path, body)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	return rr

@@ -39,7 +39,7 @@ func defaultManifest(retentionDays int) Manifest {
 }
 
 func readManifest(path string, retentionDays int) (Manifest, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path comes from config or a test temp dir
 	if err != nil {
 		return defaultManifest(retentionDays), err
 	}
@@ -59,10 +59,10 @@ func writeManifest(basePath string, m Manifest) error {
 	tmp := path + ".tmp"
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
+	if err := os.WriteFile(tmp, data, 0o644); err != nil { //nolint:gosec // G306: snapshot mode kept as is; changing it alters file access
+		return err //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 	}
-	return os.Rename(tmp, path)
+	return os.Rename(tmp, path) //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 }

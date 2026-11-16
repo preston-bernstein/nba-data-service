@@ -4,7 +4,7 @@ import "time"
 
 const (
 	envBdlBaseURL   = "BALLDONTLIE_BASE_URL"
-	envBdlAPIKey    = "BALLDONTLIE_API_KEY"
+	envBdlAPIKey    = "BALLDONTLIE_API_KEY" //nolint:gosec // G101: env var name, not a credential
 	envBdlTimezone  = "BALLDONTLIE_TIMEZONE"
 	envBdlMaxPages  = "BALLDONTLIE_MAX_PAGES"
 	envBdlPageDelay = "BALLDONTLIE_PAGE_DELAY"

@@ -19,7 +19,7 @@ func (s *stubListener) Addr() net.Addr            { return s.addr }
 
 func TestNetHTTPServerListenAndServeWithCustomListener(t *testing.T) {
 	l := &stubListener{addr: &net.TCPAddr{IP: net.IPv4zero, Port: 0}}
-	srv := &http.Server{Handler: http.NewServeMux()}
+	srv := &http.Server{Handler: http.NewServeMux()} //nolint:gosec // G112: test server, short lived
 	s := netHTTPServer{srv: srv, listener: l}
 
 	if err := s.ListenAndServe(); err == nil {
@@ -28,7 +28,7 @@ func TestNetHTTPServerListenAndServeWithCustomListener(t *testing.T) {
 }
 
 func TestNetHTTPServerListenAndServeWithoutListener(t *testing.T) {
-	srv := &http.Server{Addr: "127.0.0.1:0", Handler: http.NewServeMux()}
+	srv := &http.Server{Addr: "127.0.0.1:0", Handler: http.NewServeMux()} //nolint:gosec // G112: test server, short lived
 	s := netHTTPServer{srv: srv}
 	done := make(chan error, 1)
 	go func() { done <- s.ListenAndServe() }()
@@ -47,7 +47,7 @@ func TestNetHTTPServerListenAndServeWithoutListener(t *testing.T) {
 
 func TestNetHTTPServerAccessors(t *testing.T) {
 	handler := http.NewServeMux()
-	srv := &http.Server{Addr: ":1234", Handler: handler}
+	srv := &http.Server{Addr: ":1234", Handler: handler} //nolint:gosec // G112: test server, short lived
 	s := netHTTPServer{srv: srv}
 
 	if s.Addr() != ":1234" {

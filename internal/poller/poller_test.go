@@ -3,7 +3,6 @@ package poller
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -239,7 +238,7 @@ func TestPollerLogsOnErrorAndSuccess(t *testing.T) {
 		Err: errors.New("fail"),
 	}
 	writer := &teststubs.StubSnapshotWriter{}
-	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
+	logger := slog.New(slog.DiscardHandler)
 
 	p := New(provider, writer, logger, nil, time.Second, nil)
 	p.fetchOnce(context.Background()) // should log error
@@ -280,7 +279,7 @@ func TestPollerLogsYesterdayFetchError(t *testing.T) {
 		errFor: map[string]error{yesterday: errors.New("yesterday failed")},
 	}
 	writer := &teststubs.StubSnapshotWriter{}
-	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
+	logger := slog.New(slog.DiscardHandler)
 
 	p := New(provider, writer, logger, nil, time.Minute, nil)
 	p.now = func() time.Time { return now }
@@ -320,7 +319,7 @@ func TestPollerNilWriterDoesNotPanic(t *testing.T) {
 func TestPollerWriteErrorLogsButContinues(t *testing.T) {
 	provider := &teststubs.StubProvider{Games: []domaingames.Game{{ID: "g1"}}}
 	writer := &teststubs.StubSnapshotWriter{Err: errors.New("write failed")}
-	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
+	logger := slog.New(slog.DiscardHandler)
 
 	p := New(provider, writer, logger, nil, time.Minute, nil)
 	p.fetchOnce(context.Background())

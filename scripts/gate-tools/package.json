@@ -1,0 +1,8 @@
+{
+  "name": "gate-tools",
+  "private": true,
+  "description": "Pinned Node tools for the core gate. The lockfile holds the hashes.",
+  "devDependencies": {
+    "jscpd": "5.4.3"
+  }
+}

@@ -51,7 +51,7 @@ func TestHealth(t *testing.T) {
 func TestHealthShuttingDownReturnsServiceUnavailable(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
 	ctx, cancel := context.WithCancel(req.Context())
 	cancel()
 	req = req.WithContext(ctx)
@@ -205,7 +205,7 @@ func TestGameByIDNotFound(t *testing.T) {
 func TestGameByIDInvalidCharacters(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/games/bad%20id", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games/bad%20id", nil)
 	rr := testutil.ServeRequest(http.HandlerFunc(h.GameByID), req)
 
 	testutil.AssertStatus(t, rr, http.StatusBadRequest)
@@ -214,7 +214,7 @@ func TestGameByIDInvalidCharacters(t *testing.T) {
 func TestGameByIDWithEncodedSlash(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/games/foo%2Fbar", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games/foo%2Fbar", nil)
 	rr := testutil.ServeRequest(http.HandlerFunc(h.GameByID), req)
 
 	testutil.AssertStatus(t, rr, http.StatusBadRequest)
@@ -296,7 +296,7 @@ func TestRequestIDPropagatesThroughMiddleware(t *testing.T) {
 	mux.HandleFunc("/games/", h.GameByID)
 	wrapped := middleware.LoggingMiddleware(nil, nil, mux)
 
-	req := httptest.NewRequest(http.MethodGet, "/games/missing", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games/missing", nil)
 	req.Header.Set("X-Request-ID", "abc123")
 	rr := testutil.ServeRequest(wrapped, req)
 
@@ -411,7 +411,7 @@ func TestServeHTTPRoutingAndMethods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(tt.method, tt.path, nil)
+		req := httptest.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)
 		h.ServeHTTP(rr, req)
 		if rr.Code != tt.status {
 			t.Fatalf("path %s method %s: expected %d, got %d", tt.path, tt.method, tt.status, rr.Code)
@@ -439,7 +439,7 @@ func TestLoggerFromContextPrefersAttachedLogger(t *testing.T) {
 	fallback, _ := testutil.NewBufferLogger()
 	ctxLogger, _ := testutil.NewBufferLogger()
 	ctx := logging.WithLogger(context.Background(), ctxLogger)
-	req := httptest.NewRequest(http.MethodGet, "/games?date=2024-01-01", nil).WithContext(ctx)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games?date=2024-01-01", nil).WithContext(ctx)
 
 	got := loggerFromContext(req, fallback)
 	if got != ctxLogger {
@@ -483,7 +483,7 @@ func BenchmarkGamesByDate(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/games?date=2024-01-02", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games?date=2024-01-02", nil)
 		h.GamesToday(rr, req)
 	}
 }
@@ -516,7 +516,7 @@ func BenchmarkGameByID(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/games/game-1", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games/game-1", nil)
 		h.GameByID(rr, req)
 	}
 }

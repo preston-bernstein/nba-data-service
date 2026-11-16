@@ -42,7 +42,7 @@ func (p *KafkaPublisher) Publish(ctx context.Context, ev Event) error {
 		return fmt.Errorf("marshal event: %w", err)
 	}
 	rec := &kgo.Record{Key: []byte(ev.Key()), Value: value}
-	return p.client.ProduceSync(ctx, rec).FirstErr()
+	return p.client.ProduceSync(ctx, rec).FirstErr() //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 }
 
 // Close flushes buffered records and closes the client.

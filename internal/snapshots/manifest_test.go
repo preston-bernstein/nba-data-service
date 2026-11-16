@@ -9,7 +9,7 @@ import (
 func TestReadManifestReturnsDefaultOnDecodeError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "manifest.json")
-	if err := os.WriteFile(path, []byte("{bad json"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("{bad json"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
 		t.Fatalf("failed to write manifest: %v", err)
 	}
 
@@ -34,7 +34,7 @@ func TestWriteManifestSuccess(t *testing.T) {
 	if err := writeManifest(dir, m); err != nil {
 		t.Fatalf("expected manifest to be written, got %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	data, err := os.ReadFile(filepath.Join(dir, "manifest.json")) //nolint:gosec // G304: path comes from config or a test temp dir
 	if err != nil {
 		t.Fatalf("expected manifest file, got %v", err)
 	}

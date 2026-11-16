@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Run every gate before a commit. Enable it once per clone: git config core.hooksPath .githooks
+# CI runs the same scripts, because a hook can be skipped. Never commit with --no-verify.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+bash scripts/core-validate.sh
+bash scripts/gha-validate.sh
+bash scripts/go-validate.sh
+bash scripts/docker-validate.sh
+bash scripts/writing-validate.sh
+python3 -I scripts/logging-check.py .

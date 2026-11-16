@@ -165,7 +165,7 @@ func (h *Handler) loadSnapshot(date string) (domaingames.TodayResponse, error) {
 	}
 	ctx := context.Background()
 	if err := ctx.Err(); err != nil {
-		return domaingames.TodayResponse{}, err
+		return domaingames.TodayResponse{}, err //nolint:wrapcheck // callers compare the context sentinel
 	}
-	return h.snaps.LoadGames(date)
+	return h.snaps.LoadGames(date) //nolint:wrapcheck // error text and type kept as is; wrapping changes behavior
 }

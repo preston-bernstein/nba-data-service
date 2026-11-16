@@ -138,7 +138,7 @@ func TestPrometheusComponentsReturnsReaderAndHandler(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/metrics", nil)
 	handler.ServeHTTP(rr, req)
 	if rr.Code == 0 {
 		t.Fatalf("expected handler to write status")
@@ -278,14 +278,14 @@ func (m scriptedMeter) Int64Counter(name string, opts ...metric.Int64CounterOpti
 	if name == m.failCounter {
 		return nil, errors.New("counter fail")
 	}
-	return m.Meter.Int64Counter(name, opts...)
+	return m.Meter.Int64Counter(name, opts...) //nolint:wrapcheck // thin pass-through; callers see the original error
 }
 
 func (m scriptedMeter) Float64Histogram(name string, opts ...metric.Float64HistogramOption) (metric.Float64Histogram, error) {
 	if name == m.failHistogram {
 		return nil, errors.New("histogram fail")
 	}
-	return m.Meter.Float64Histogram(name, opts...)
+	return m.Meter.Float64Histogram(name, opts...) //nolint:wrapcheck // thin pass-through; callers see the original error
 }
 
 type scriptedProvider struct {

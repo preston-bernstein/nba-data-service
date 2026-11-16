@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -121,12 +122,12 @@ func (s *Server) Run(ctx context.Context, stop context.CancelFunc) {
 		s.logger.Info("shutdown signal received")
 	}
 
-	s.gracefulShutdown()
+	s.gracefulShutdown() //nolint:contextcheck // ctx is already cancelled, so shutdown needs a fresh one
 }
 
 func (s *Server) startServer(stop context.CancelFunc) {
 	if s.logger != nil {
-		s.logger.Info("http server starting", slog.String("addr", s.httpServer.Addr()))
+		s.logger.Info("http server starting", "addr", s.httpServer.Addr())
 	}
 	launchServer("http", s.httpServer, s.logger, func(err error) {
 		if stop != nil {
@@ -140,7 +141,7 @@ func (s *Server) startMetrics() {
 		return
 	}
 	if s.logger != nil {
-		s.logger.Info("metrics server starting", slog.String("addr", s.metricsServer.Addr()))
+		s.logger.Info("metrics server starting", "addr", s.metricsServer.Addr())
 	}
 	launchServer("metrics", s.metricsServer, s.logger, nil)
 }
@@ -219,7 +220,7 @@ func buildMetrics(cfg config.Config, logger *slog.Logger, recorder *metrics.Reco
 	var metricsSrv httpServer
 	if handler != nil && recCfg.Enabled {
 		metricsSrv = netHTTPServer{
-			srv: &http.Server{
+			srv: &http.Server{ //nolint:gosec // G112: ReadTimeout also bounds header reads
 				Addr:    ":" + recCfg.Port,
 				Handler: handler,
 			},
@@ -232,9 +233,9 @@ func buildMetrics(cfg config.Config, logger *slog.Logger, recorder *metrics.Reco
 func launchServer(name string, srv httpServer, logger *slog.Logger, onError func(error)) {
 	go func() {
 		if logger != nil {
-			logger.Info("starting "+name+" server", slog.String("addr", srv.Addr()))
+			logger.Info("starting "+name+" server", "addr", srv.Addr())
 		}
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			if logger != nil {
 				logger.Warn(name+" server failed", "error", err)
 			}

@@ -68,7 +68,7 @@ func TestLoggingMiddlewareUsesForwardedFor(t *testing.T) {
 	})
 
 	handler := LoggingMiddleware(logger, rec, next)
-	req := httptest.NewRequest(http.MethodGet, "/games?date=2024-01-01", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games?date=2024-01-01", nil)
 	req.Header.Set("X-Forwarded-For", "198.51.100.1")
 	rr := testutil.ServeRequest(handler, req)
 
@@ -143,7 +143,7 @@ func BenchmarkLoggingMiddleware(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/games?date=2024-01-01", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games?date=2024-01-01", nil)
 		handler.ServeHTTP(rr, req)
 	}
 }

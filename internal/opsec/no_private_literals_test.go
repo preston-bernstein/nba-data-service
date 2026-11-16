@@ -3,6 +3,7 @@
 package opsec
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"regexp"
@@ -37,7 +38,7 @@ func TestNoPrivateIPLiteralsInTrackedSource(t *testing.T) {
 			continue
 		}
 
-		data, err := os.ReadFile(root + "/" + rel)
+		data, err := os.ReadFile(root + "/" + rel) //nolint:gosec // G304: path comes from config or a test temp dir
 		if err != nil {
 			// Not every tracked path is a readable regular file (e.g. a
 			// submodule gitlink); skip anything we can't read as text.
@@ -84,7 +85,7 @@ func TestNoForbiddenHostAliasesInTrackedSource(t *testing.T) {
 		if rel == selfPath {
 			continue
 		}
-		data, err := os.ReadFile(root + "/" + rel)
+		data, err := os.ReadFile(root + "/" + rel) //nolint:gosec // G304: path comes from config or a test temp dir
 		if err != nil {
 			continue
 		}
@@ -123,9 +124,9 @@ func trackedFiles(t *testing.T) (string, []string) {
 }
 
 func gitOutput(args ...string) (string, error) {
-	out, err := exec.Command("git", args...).Output()
+	out, err := exec.CommandContext(context.Background(), "git", args...).Output() //nolint:gosec // G204: fixed git arguments, no user input
 	if err != nil {
-		return "", err
+		return "", err //nolint:wrapcheck // thin pass-through; callers see the original error
 	}
 	return strings.TrimRight(string(out), "\n"), nil
 }

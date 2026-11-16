@@ -41,14 +41,14 @@ func (p *rateLimitedProvider) FetchGames(ctx context.Context, date string, tz st
 	select {
 	case <-ctx.Done():
 		logWithProvider(ctx, p.logger, slog.LevelWarn, p.name, "rate-limited fetch canceled")
-		return nil, ctx.Err()
+		return nil, ctx.Err() //nolint:wrapcheck // callers compare the context sentinel
 	case <-p.ticker.C:
 	}
 	logWithProvider(ctx, p.logger, slog.LevelInfo, p.name, "rate-limited provider fetch",
 		slog.String("date", date),
 		slog.String("tz", tz),
 	)
-	return p.next.FetchGames(ctx, date, tz)
+	return p.next.FetchGames(ctx, date, tz) //nolint:wrapcheck // thin pass-through; callers see the original error
 }
 
 // Close stops the internal ticker; callers should invoke when discarding the provider to avoid leaks.

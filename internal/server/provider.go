@@ -22,7 +22,7 @@ func selectProvider(cfg config.Config, logger *slog.Logger) providers.GameProvid
 		})
 	default:
 		if logger != nil {
-			logger.Warn("unknown provider, falling back to fixture", slog.String("provider", cfg.Provider))
+			logger.Warn("unknown provider, falling back to fixture", "provider", cfg.Provider)
 		}
 		return fixture.New()
 	}
