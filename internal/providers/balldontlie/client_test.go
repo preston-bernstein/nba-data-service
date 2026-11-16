@@ -2,6 +2,7 @@ package balldontlie
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -209,8 +210,8 @@ func TestFetchGamesHandlesRateLimit(t *testing.T) {
 		t.Fatal("expected rate limit error")
 	}
 
-	rlErr, ok := err.(*providers.RateLimitError)
-	if !ok {
+	var rlErr *providers.RateLimitError
+	if !errors.As(err, &rlErr) {
 		t.Fatalf("expected RateLimitError, got %T", err)
 	}
 	if rlErr.RetryAfter != 10*time.Second {

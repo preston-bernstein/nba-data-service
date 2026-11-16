@@ -255,7 +255,7 @@ func TestFetchAndWriteHandlesErrorsAndSuccess(t *testing.T) {
 
 	// Writer failure (basePath is a file, so MkdirAll should fail).
 	filePath := filepath.Join(dir, "not-a-dir")
-	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
 		t.Fatalf("failed to create placeholder file: %v", err)
 	}
 	s = NewSyncer(goodProvider{games: []domaingames.Game{{ID: "g1"}}}, &Writer{basePath: filePath, retentionDays: 1}, SyncConfig{Enabled: true}, logger, nil)
@@ -307,7 +307,7 @@ func TestBackfillLogsWhenSnapshotWipeFails(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
 		t.Fatalf("failed to create games file: %v", err)
 	}
 	writer := NewWriter(dir, 7)

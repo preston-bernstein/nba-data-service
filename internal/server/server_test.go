@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -295,7 +294,7 @@ func TestGracefulShutdownStopsAll(t *testing.T) {
 }
 
 func TestGracefulShutdownLogsErrors(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	stubSrv := &testutil.StubHTTPServer{ShutdownErr: errors.New("srv err")}
 	stubMetrics := &testutil.StubHTTPServer{ShutdownErr: errors.New("metrics err")}
 	stubPoller := &testutil.StubPoller{Err: errors.New("poller err")}
@@ -450,7 +449,7 @@ func TestServerHandlerSetsRequestIDHeader(t *testing.T) {
 	}
 	srv := New(cfg, nil)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
 	srv.Handler().ServeHTTP(rr, req)
 	if got := rr.Header().Get("X-Request-ID"); got == "" {
 		t.Fatalf("expected X-Request-ID header set by middleware")
@@ -469,7 +468,7 @@ func TestAdminRouteMountedOnlyWithToken(t *testing.T) {
 	}
 	srv := New(cfg, nil)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/admin/snapshots/refresh", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/snapshots/refresh", nil)
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected admin route mounted with 401 without token, got %d", rr.Code)
@@ -494,7 +493,7 @@ func TestBuildMetricsUsesFallbackOnSetupError(t *testing.T) {
 		return nil, nil, nil, errors.New("boom")
 	}
 
-	rec, srv, stop := buildMetrics(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	rec, srv, stop := buildMetrics(cfg, slog.New(slog.DiscardHandler), nil)
 	if rec == nil {
 		t.Fatalf("expected recorder even on setup error")
 	}
@@ -660,7 +659,7 @@ type syncBuffer struct {
 func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+	return b.buf.Write(p) //nolint:wrapcheck // thin pass-through; callers see the original error
 }
 
 func (b *syncBuffer) String() string {

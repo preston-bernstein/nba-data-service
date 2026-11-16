@@ -22,7 +22,7 @@ func WriteSnapshot(t *testing.T, w *snapshots.Writer, date string) {
 }
 
 func writeSnapshotPayload(w *snapshots.Writer, date string) error {
-	return w.WriteGamesSnapshot(date, domaingames.TodayResponse{
+	return w.WriteGamesSnapshot(date, domaingames.TodayResponse{ //nolint:wrapcheck // thin pass-through; callers see the original error
 		Date: date,
 		Games: []domaingames.Game{
 			{ID: date},

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestWriteErrorIncludesRequestID(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
 	logger, _ := testutil.NewBufferLogger()
 
 	req.Header.Set("X-Request-ID", "abc123")
@@ -48,7 +49,7 @@ func TestWriteJSONLogsEncodeError(t *testing.T) {
 func TestWriteErrorFallsBackToHeaderRequestID(t *testing.T) {
 	logger, _ := testutil.NewBufferLogger()
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
 	req.Header.Set("X-Request-ID", "header-id")
 	writeError(rr, req, http.StatusTeapot, "boom", logger)
 	if !bytes.Contains(rr.Body.Bytes(), []byte("header-id")) {

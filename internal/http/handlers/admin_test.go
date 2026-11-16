@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,7 @@ import (
 
 func callRefresh(t *testing.T, h *AdminHandler, method, path, token string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, nil)
+	req := httptest.NewRequestWithContext(context.Background(), method, path, nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -89,7 +90,7 @@ func TestAdminRefreshNoGames(t *testing.T) {
 func TestAdminRefreshHandlesWriterError(t *testing.T) {
 	// Base path is a file; writer will fail.
 	tmpFile := filepath.Join(t.TempDir(), "notadir")
-	if err := os.WriteFile(tmpFile, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
 		t.Fatalf("failed to create placeholder file: %v", err)
 	}
 	writer := snapshots.NewWriter(tmpFile, 1)
@@ -135,7 +136,7 @@ func TestAdminRefreshProviderError(t *testing.T) {
 func TestAdminRefreshUnauthorizedLogsClientIP(t *testing.T) {
 	logger, buf := testutil.NewBufferLogger()
 	h := NewAdminHandler(nil, nil, "secret", logger)
-	req := httptest.NewRequest(http.MethodPost, "/admin/snapshots/refresh", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/snapshots/refresh", nil)
 	req.Header.Set("X-Forwarded-For", "192.0.2.1, 192.0.2.2")
 	rr := httptest.NewRecorder()
 
@@ -151,13 +152,13 @@ func TestAdminRefreshUnauthorizedLogsClientIP(t *testing.T) {
 
 func TestAuthorizeHandlesEmptyToken(t *testing.T) {
 	h := NewAdminHandler(nil, nil, "", nil)
-	if h.authorize(httptest.NewRequest(http.MethodGet, "/", nil)) {
+	if h.authorize(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)) {
 		t.Fatalf("expected empty token to be unauthorized")
 	}
 }
 
 func TestClientIPFromForwardedHeader(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
 	if got := clientIP(req); got != "1.2.3.4" {
 		t.Fatalf("expected first forwarded address, got %s", got)
@@ -165,7 +166,7 @@ func TestClientIPFromForwardedHeader(t *testing.T) {
 }
 
 func TestClientIPFallsBackToRemoteAddr(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "9.9.9.9:1234"
 	if got := clientIP(req); got != "9.9.9.9:1234" {
 		t.Fatalf("expected remote addr fallback, got %s", got)

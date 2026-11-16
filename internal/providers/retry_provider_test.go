@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"math/rand"
 	"testing"
@@ -118,7 +117,7 @@ func TestRetryingProviderRecordsRateLimitMetrics(t *testing.T) {
 func TestRetryingProviderDelaySelection(t *testing.T) {
 	rec := metrics.NewRecorder()
 	rp := NewRetryingProvider(&rateLimitThenSuccessProvider{}, nil, rec, "rl", 2, time.Millisecond).(*retryingProvider)
-	rp.rng = rand.New(rand.NewSource(1))
+	rp.rng = rand.New(rand.NewSource(1)) //nolint:gosec // G404: retry jitter, not a security value
 	rp.backoffFn = func(attempt int) time.Duration {
 		_ = attempt
 		return 50 * time.Millisecond
@@ -144,7 +143,8 @@ func TestRetryingProviderDelaySelection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			delay := rp.computeDelay(tt.err, 1)
-			if rlErr, ok := tt.err.(*RateLimitError); ok && rlErr.RetryAfter > 0 {
+			var rlErr *RateLimitError
+			if errors.As(tt.err, &rlErr) && rlErr.RetryAfter > 0 {
 				if delay != tt.expected {
 					t.Fatalf("expected retry-after delay %s, got %s", tt.expected, delay)
 				}
@@ -163,7 +163,7 @@ func TestRetryingProviderDelaySelection(t *testing.T) {
 
 func TestNewRetryingProviderWithRNG(t *testing.T) {
 	fp := &flakeyProvider{failures: 1}
-	rng := rand.New(rand.NewSource(2))
+	rng := rand.New(rand.NewSource(2)) //nolint:gosec // G404: retry jitter, not a security value
 	rp := NewRetryingProviderWithRNG(fp, nil, metrics.NewRecorder(), "flakey", rng, 2, time.Millisecond)
 
 	games, err := rp.FetchGames(context.Background(), "", "")
@@ -201,7 +201,7 @@ func TestNewRetryingProviderWithNilProviderSetsFallbackName(t *testing.T) {
 }
 
 func TestRetryingProviderJitterDelayAndSleep(t *testing.T) {
-	rp := &retryingProvider{rng: rand.New(rand.NewSource(1))}
+	rp := &retryingProvider{rng: rand.New(rand.NewSource(1))} //nolint:gosec // G404: retry jitter, not a security value
 
 	if got := rp.jitterDelay(0); got != 0 {
 		t.Fatalf("expected zero jitter for zero base, got %s", got)
@@ -220,7 +220,7 @@ func TestRetryingProviderJitterDelayAndSleep(t *testing.T) {
 }
 
 func TestRetryingProviderLogRetryIncludesRateLimitFields(t *testing.T) {
-	bufLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	bufLogger := slog.New(slog.DiscardHandler)
 	rp := &retryingProvider{
 		logger:       bufLogger,
 		providerName: "test",
