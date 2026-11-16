@@ -21,10 +21,10 @@ type netHTTPServer struct {
 
 func (s netHTTPServer) ListenAndServe() error {
 	if s.listener != nil {
-		return s.srv.Serve(s.listener) //nolint:wrapcheck // thin pass-through; callers see the original error
+		return s.srv.Serve(s.listener) //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 	}
-	return s.srv.ListenAndServe() //nolint:wrapcheck // thin pass-through; callers see the original error
+	return s.srv.ListenAndServe() //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 }
-func (s netHTTPServer) Shutdown(ctx context.Context) error { return s.srv.Shutdown(ctx) } //nolint:wrapcheck // thin pass-through; callers see the original error
+func (s netHTTPServer) Shutdown(ctx context.Context) error { return s.srv.Shutdown(ctx) } //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 func (s netHTTPServer) Addr() string                       { return s.srv.Addr }
 func (s netHTTPServer) Handler() http.Handler              { return s.srv.Handler }

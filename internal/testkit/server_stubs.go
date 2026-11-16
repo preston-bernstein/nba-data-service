@@ -1,8 +1,9 @@
-package testutil
+package testkit
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -90,7 +91,7 @@ func (b *BlockingHTTPServer) Shutdown(ctx context.Context) error {
 	b.ShutdownCalls++
 	select {
 	case <-ctx.Done():
-		return ctx.Err() //nolint:wrapcheck // callers compare the context sentinel
+		return fmt.Errorf("blocking shutdown: %w", ctx.Err())
 	case <-b.Unblock:
 		return nil
 	}

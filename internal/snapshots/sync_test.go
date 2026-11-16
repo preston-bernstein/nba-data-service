@@ -86,7 +86,7 @@ func TestSyncerBackfillsPastAndFuture(t *testing.T) {
 	}
 
 	// Backfill wipes all snapshots first, then fetches full window (no pre-seeded skip).
-	syncer := NewSyncer(provider, writer, cfg, nil, nil)
+	syncer := NewSyncer(SyncDeps{Provider: provider, Writer: writer}, cfg)
 	syncer.now = func() time.Time { return now }
 
 	syncer.Run(ctx)
@@ -107,15 +107,15 @@ func TestSyncerBackfillsPastAndFuture(t *testing.T) {
 }
 
 func TestSyncerSkipsWhenDisabledOrNil(t *testing.T) {
-	s := NewSyncer(nil, nil, SyncConfig{Enabled: false}, nil, nil)
+	s := NewSyncer(SyncDeps{}, SyncConfig{Enabled: false})
 	s.Run(context.Background())
 
-	s = NewSyncer(nil, nil, SyncConfig{Enabled: true}, nil, nil)
+	s = NewSyncer(SyncDeps{}, SyncConfig{Enabled: true})
 	s.Run(context.Background())
 }
 
 func TestSleepRespectsContext(t *testing.T) {
-	s := NewSyncer(nil, nil, SyncConfig{Enabled: true}, nil, nil)
+	s := NewSyncer(SyncDeps{}, SyncConfig{Enabled: true})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	start := time.Now()
@@ -126,7 +126,7 @@ func TestSleepRespectsContext(t *testing.T) {
 }
 
 func TestHasSnapshotNilWriter(t *testing.T) {
-	s := NewSyncer(nil, nil, SyncConfig{}, nil, nil)
+	s := NewSyncer(SyncDeps{}, SyncConfig{})
 	if s.hasSnapshot("2024-01-01") {
 		t.Fatalf("expected hasSnapshot to be false with nil writer")
 	}
@@ -137,7 +137,7 @@ func TestBuildDatesSkipsExistingSnapshots(t *testing.T) {
 	writeSimpleSnapshot(t, w, "2024-01-03") // past (2 days ago; still always refreshed)
 	writeSimpleSnapshot(t, w, "2024-01-06") // future
 
-	s := NewSyncer(nil, w, SyncConfig{Enabled: true, Days: 5, FutureDays: 2}, nil, nil)
+	s := NewSyncer(SyncDeps{Writer: w}, SyncConfig{Enabled: true, Days: 5, FutureDays: 2})
 	now := time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return now }
 	dates := s.buildDates(s.now())
@@ -171,7 +171,7 @@ func TestDailyUsesTicker(t *testing.T) {
 		Interval:     time.Nanosecond,
 		DailyHourUTC: time.Now().UTC().Hour(),
 	}
-	s := NewSyncer(prov, writer, cfg, nil, nil)
+	s := NewSyncer(SyncDeps{Provider: prov, Writer: writer}, cfg)
 	s.now = func() time.Time { return time.Now().UTC() }
 	s.newTicker = func(d time.Duration) *time.Ticker {
 		return time.NewTicker(time.Millisecond)
@@ -194,7 +194,7 @@ func TestDailyUsesTicker(t *testing.T) {
 }
 
 func TestDailyReturnsOnCancel(t *testing.T) {
-	s := NewSyncer(nil, NewWriter(t.TempDir(), 1), SyncConfig{Enabled: true}, nil, nil)
+	s := NewSyncer(SyncDeps{Writer: NewWriter(t.TempDir(), 1)}, SyncConfig{Enabled: true})
 	s.newTicker = func(d time.Duration) *time.Ticker { return time.NewTicker(time.Hour) }
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -220,12 +220,12 @@ func (p goodProvider) FetchGames(ctx context.Context, date string, tz string) ([
 }
 
 func TestSyncerNormalizesConfig(t *testing.T) {
-	s := NewSyncer(nil, nil, SyncConfig{
+	s := NewSyncer(SyncDeps{}, SyncConfig{
 		Days:         0,
 		FutureDays:   -1,
 		Interval:     0,
 		DailyHourUTC: -5,
-	}, nil, nil)
+	})
 
 	if s.cfg.Days != 7 {
 		t.Fatalf("expected default days 7, got %d", s.cfg.Days)
@@ -246,24 +246,24 @@ func TestFetchAndWriteHandlesErrorsAndSuccess(t *testing.T) {
 	logger := testLogger()
 
 	// Provider error -> logWarn path, no panic.
-	s := NewSyncer(errProvider{err: providers.ErrProviderUnavailable}, NewWriter(dir, 7), SyncConfig{Enabled: true}, logger, nil)
+	s := NewSyncer(SyncDeps{Provider: errProvider{err: providers.ErrProviderUnavailable}, Writer: NewWriter(dir, 7), Logger: logger}, SyncConfig{Enabled: true})
 	s.fetchAndWrite(context.Background(), "2024-01-01")
 
 	// Empty games -> logWarn path.
-	s = NewSyncer(emptyProvider{}, NewWriter(dir, 7), SyncConfig{Enabled: true}, logger, nil)
+	s = NewSyncer(SyncDeps{Provider: emptyProvider{}, Writer: NewWriter(dir, 7), Logger: logger}, SyncConfig{Enabled: true})
 	s.fetchAndWrite(context.Background(), "2024-01-02")
 
 	// Writer failure (basePath is a file, so MkdirAll should fail).
 	filePath := filepath.Join(dir, "not-a-dir")
-	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
 		t.Fatalf("failed to create placeholder file: %v", err)
 	}
-	s = NewSyncer(goodProvider{games: []domaingames.Game{{ID: "g1"}}}, &Writer{basePath: filePath, retentionDays: 1}, SyncConfig{Enabled: true}, logger, nil)
+	s = NewSyncer(SyncDeps{Provider: goodProvider{games: []domaingames.Game{{ID: "g1"}}}, Writer: &Writer{basePath: filePath, retentionDays: 1}, Logger: logger}, SyncConfig{Enabled: true})
 	s.fetchAndWrite(context.Background(), "2024-01-03")
 
 	// Successful write path (large retention to avoid pruning).
 	writer := NewWriter(t.TempDir(), 10000)
-	s = NewSyncer(goodProvider{games: []domaingames.Game{{ID: "g2"}}}, writer, SyncConfig{Enabled: true}, logger, nil)
+	s = NewSyncer(SyncDeps{Provider: goodProvider{games: []domaingames.Game{{ID: "g2"}}}, Writer: writer, Logger: logger}, SyncConfig{Enabled: true})
 	s.fetchAndWrite(context.Background(), "2024-01-04")
 	requireSnapshotExists(t, writer, "2024-01-04")
 }
@@ -271,7 +271,7 @@ func TestFetchAndWriteHandlesErrorsAndSuccess(t *testing.T) {
 func TestRunSkipsWhenDisabled(t *testing.T) {
 	prov := goodProvider{games: []domaingames.Game{{ID: "g1"}}}
 	writer := NewWriter(t.TempDir(), 7)
-	s := NewSyncer(prov, writer, SyncConfig{Enabled: false}, testLogger(), nil)
+	s := NewSyncer(SyncDeps{Provider: prov, Writer: writer, Logger: testLogger()}, SyncConfig{Enabled: false})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s.Run(ctx) // should return immediately without panic
@@ -280,7 +280,7 @@ func TestRunSkipsWhenDisabled(t *testing.T) {
 func TestBackfillRespectsContextCancel(t *testing.T) {
 	prov := goodProvider{games: []domaingames.Game{{ID: "g1"}}}
 	writer := NewWriter(t.TempDir(), 7)
-	s := NewSyncer(prov, writer, SyncConfig{Enabled: true, Interval: time.Second}, testLogger(), nil)
+	s := NewSyncer(SyncDeps{Provider: prov, Writer: writer, Logger: testLogger()}, SyncConfig{Enabled: true, Interval: time.Second})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	s.backfill(ctx, time.Now().UTC()) // should exit quickly without writing
@@ -291,7 +291,7 @@ func TestRunLogsInitialBackfillComplete(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	writer := NewWriter(t.TempDir(), 7)
 	prov := goodProvider{games: []domaingames.Game{{ID: "g1"}}}
-	s := NewSyncer(prov, writer, SyncConfig{Enabled: true, Days: 1, Interval: time.Nanosecond}, logger, nil)
+	s := NewSyncer(SyncDeps{Provider: prov, Writer: writer, Logger: logger}, SyncConfig{Enabled: true, Days: 1, Interval: time.Nanosecond})
 	s.now = func() time.Time { return time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC) }
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -307,12 +307,12 @@ func TestBackfillLogsWhenSnapshotWipeFails(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o644); err != nil { //nolint:gosec // G306: test fixture in a temp dir
+	if err := os.WriteFile(filepath.Join(dir, "games"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("failed to create games file: %v", err)
 	}
 	writer := NewWriter(dir, 7)
 	prov := goodProvider{games: []domaingames.Game{{ID: "g1"}}}
-	s := NewSyncer(prov, writer, SyncConfig{Enabled: true, Days: 1, Interval: time.Nanosecond}, logger, nil)
+	s := NewSyncer(SyncDeps{Provider: prov, Writer: writer, Logger: logger}, SyncConfig{Enabled: true, Days: 1, Interval: time.Nanosecond})
 
 	s.backfill(context.Background(), time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC))
 

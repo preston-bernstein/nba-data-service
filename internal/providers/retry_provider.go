@@ -30,44 +30,59 @@ type retryingProvider struct {
 	rng          *rand.Rand
 }
 
-// NewRetryingProvider wraps the given provider with retries. If maxAttempts/backoff are <= 0, defaults are used.
-// providerName is optional; when empty it falls back to the provider type.
-func NewRetryingProvider(inner GameProvider, logger *slog.Logger, metricsRecorder *metrics.Recorder, providerName string, maxAttempts int, backoff time.Duration) GameProvider {
-	return NewRetryingProviderWithRNG(inner, logger, metricsRecorder, providerName, nil, maxAttempts, backoff)
+// RetryConfig tunes a retrying provider. Zero values select the defaults.
+type RetryConfig struct {
+	Logger *slog.Logger
+	// Metrics may be nil.
+	Metrics *metrics.Recorder
+	// Name labels logs and metrics; when empty it falls back to the provider type.
+	Name string
+	// MaxAttempts defaults to defaultRetryAttempts when <= 0.
+	MaxAttempts int
+	// Backoff defaults to defaultBackoff when <= 0.
+	Backoff time.Duration
+	// RNG drives the jitter; inject one for deterministic tests.
+	RNG *rand.Rand
 }
 
-// NewRetryingProviderWithRNG is identical to NewRetryingProvider but allows injecting a rand.Rand for deterministic tests.
-func NewRetryingProviderWithRNG(inner GameProvider, logger *slog.Logger, metricsRecorder *metrics.Recorder, providerName string, rng *rand.Rand, maxAttempts int, backoff time.Duration) GameProvider {
-	if maxAttempts <= 0 {
-		maxAttempts = defaultRetryAttempts
+// NewRetryingProvider wraps the given provider with retries, using the defaults for any zero config value.
+func NewRetryingProvider(inner GameProvider, cfg RetryConfig) GameProvider {
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = defaultRetryAttempts
 	}
-	if backoff <= 0 {
-		backoff = defaultBackoff
+	if cfg.Backoff <= 0 {
+		cfg.Backoff = defaultBackoff
 	}
-
-	if providerName == "" {
-		if inner != nil {
-			providerName = fmt.Sprintf("%T", inner)
-		} else {
-			providerName = "provider"
-		}
+	if cfg.Name == "" {
+		cfg.Name = defaultProviderName(inner)
 	}
-
-	if rng == nil {
-		rng = rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec // G404: retry jitter, not a security value
+	if cfg.RNG == nil {
+		cfg.RNG = newJitterRNG(time.Now().UnixNano())
 	}
 
 	return &retryingProvider{
 		gameProvider: inner,
-		logger:       logger,
-		metrics:      metricsRecorder,
-		providerName: providerName,
-		maxAttempts:  maxAttempts,
+		logger:       cfg.Logger,
+		metrics:      cfg.Metrics,
+		providerName: cfg.Name,
+		maxAttempts:  cfg.MaxAttempts,
 		backoffFn: func(attempt int) time.Duration {
-			return time.Duration(attempt) * backoff
+			return time.Duration(attempt) * cfg.Backoff
 		},
-		rng: rng,
+		rng: cfg.RNG,
 	}
+}
+
+func defaultProviderName(inner GameProvider) string {
+	if inner == nil {
+		return "provider"
+	}
+	return fmt.Sprintf("%T", inner)
+}
+
+// newJitterRNG seeds the retry jitter source. Jitter only spreads out retries; it is not a security value.
+func newJitterRNG(seed int64) *rand.Rand {
+	return rand.New(rand.NewSource(seed)) //nolint:gosec // G404: retry jitter, not a security value
 }
 
 func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
@@ -90,7 +105,7 @@ func (r *retryingProvider) FetchGames(ctx context.Context, date string, tz strin
 		lastErr = err
 
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, ctxErr //nolint:wrapcheck // callers compare the context sentinel
+			return nil, ctxErr //nolint:wrapcheck // context error is returned as is; wrapping changes its message and identity
 		}
 
 		if attempt == r.maxAttempts {
@@ -146,7 +161,7 @@ func (r *retryingProvider) sleep(ctx context.Context, delay time.Duration) error
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err() //nolint:wrapcheck // callers compare the context sentinel
+		return ctx.Err() //nolint:wrapcheck // context error is returned as is; wrapping changes its message and identity
 	case <-timer.C:
 		return nil
 	}
@@ -184,5 +199,5 @@ func (r *retryingProvider) logRetry(ctx context.Context, attempt int, delay time
 
 func (r *retryingProvider) log(ctx context.Context, level slog.Level, msg string, args ...any) {
 	logger := logging.FromContext(ctx, r.logger)
-	logWithProvider(ctx, logger, level, r.providerName, msg, args...)
+	providerLogger{logger: logger, provider: r.providerName}.log(ctx, level, msg, args...)
 }

@@ -1,4 +1,4 @@
-package testutil
+package testkit
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -69,7 +70,7 @@ func TestSnapshotHelpers(t *testing.T) {
 	date := time.Now().UTC().Format(time.DateOnly)
 	WriteSnapshot(t, w, date)
 	path := SnapshotPath(w, date)
-	data, err := os.ReadFile(path) //nolint:gosec // G304: path comes from config or a test temp dir
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		t.Fatalf("expected snapshot file, got %v", err)
 	}
@@ -120,7 +121,7 @@ func TestWriteSnapshotPayloadHandlesNilWriter(t *testing.T) {
 	}
 }
 
-func TestServerStubs(t *testing.T) {
+func TestStubPoller(t *testing.T) {
 	p := &StubPoller{Err: errors.New("stop")}
 	p.Start(context.Background())
 	if err := p.Stop(context.Background()); !errors.Is(err, p.Err) {
@@ -130,6 +131,13 @@ func TestServerStubs(t *testing.T) {
 		t.Fatalf("unexpected call counts %+v", p)
 	}
 
+	// verify Status passthrough
+	if p.Status() != p.StatusVal {
+		t.Fatalf("expected status passthrough")
+	}
+}
+
+func TestStubHTTPServer(t *testing.T) {
 	sh := &StubHTTPServer{ListenErr: errors.New("boom"), ShutdownErr: errors.New("down")}
 	sh.HandlerVal = http.NewServeMux()
 	_ = sh.ListenAndServe()
@@ -139,7 +147,9 @@ func TestServerStubs(t *testing.T) {
 	if sh.ListenCalls != 1 || sh.ShutdownCalls != 1 {
 		t.Fatalf("expected listen/shutdown calls, got %+v", sh)
 	}
+}
 
+func TestBlockingHTTPServer(t *testing.T) {
 	b := &BlockingHTTPServer{Unblock: make(chan struct{}), HandlerVal: http.NewServeMux()}
 	if err := b.ListenAndServe(); err != nil {
 		t.Fatalf("expected nil listen error for blocking server")
@@ -157,7 +167,9 @@ func TestServerStubs(t *testing.T) {
 	if b.ShutdownCalls != 1 {
 		t.Fatalf("expected shutdown called once")
 	}
+}
 
+func TestErrHTTPServer(t *testing.T) {
 	e := &ErrHTTPServer{}
 	_ = e.ListenAndServe()
 	_ = e.Shutdown(context.Background())
@@ -168,7 +180,9 @@ func TestServerStubs(t *testing.T) {
 	if e.ShutdownCalls != 1 {
 		t.Fatalf("expected shutdown call for ErrHTTPServer")
 	}
+}
 
+func TestCloseableHTTPServer(t *testing.T) {
 	c := &CloseableHTTPServer{}
 	_ = c.ListenAndServe()
 	_ = c.Shutdown(context.Background())
@@ -178,11 +192,6 @@ func TestServerStubs(t *testing.T) {
 	}
 	if c.ShutdownCalls != 1 {
 		t.Fatalf("expected shutdown call for CloseableHTTPServer")
-	}
-
-	// verify Status passthrough
-	if p.Status() != p.StatusVal {
-		t.Fatalf("expected status passthrough")
 	}
 }
 
