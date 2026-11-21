@@ -19,7 +19,7 @@ func (s *stubListener) Addr() net.Addr            { return s.addr }
 
 func TestNetHTTPServerListenAndServeWithCustomListener(t *testing.T) {
 	l := &stubListener{addr: &net.TCPAddr{IP: net.IPv4zero, Port: 0}}
-	srv := &http.Server{Handler: http.NewServeMux()}
+	srv := &http.Server{Handler: http.NewServeMux(), ReadHeaderTimeout: time.Second}
 	s := netHTTPServer{srv: srv, listener: l}
 
 	if err := s.ListenAndServe(); err == nil {
@@ -28,7 +28,7 @@ func TestNetHTTPServerListenAndServeWithCustomListener(t *testing.T) {
 }
 
 func TestNetHTTPServerListenAndServeWithoutListener(t *testing.T) {
-	srv := &http.Server{Addr: "127.0.0.1:0", Handler: http.NewServeMux()}
+	srv := &http.Server{Addr: "127.0.0.1:0", Handler: http.NewServeMux(), ReadHeaderTimeout: time.Second}
 	s := netHTTPServer{srv: srv}
 	done := make(chan error, 1)
 	go func() { done <- s.ListenAndServe() }()
@@ -37,7 +37,8 @@ func TestNetHTTPServerListenAndServeWithoutListener(t *testing.T) {
 	_ = srv.Shutdown(context.Background())
 
 	select {
-	case <-done:
+	case err := <-done:
+		_ = err // any return (success or error) is acceptable
 		// Any return (success or error) is acceptable; ensure it exits promptly.
 	case <-time.After(1 * time.Second):
 		t.Fatalf("listen did not return after shutdown")
@@ -46,7 +47,7 @@ func TestNetHTTPServerListenAndServeWithoutListener(t *testing.T) {
 
 func TestNetHTTPServerAccessors(t *testing.T) {
 	handler := http.NewServeMux()
-	srv := &http.Server{Addr: ":1234", Handler: handler}
+	srv := &http.Server{Addr: ":1234", Handler: handler, ReadHeaderTimeout: time.Second}
 	s := netHTTPServer{srv: srv}
 
 	if s.Addr() != ":1234" {

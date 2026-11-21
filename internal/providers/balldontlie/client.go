@@ -13,8 +13,8 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/gamedate"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
-	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 // Config controls how the balldontlie client reaches the upstream API.
@@ -66,7 +66,7 @@ func (c *Client) FetchGames(ctx context.Context, date string, tz string) ([]doma
 	decode := func(dec *json.Decoder) ([]domaingames.Game, int, error) {
 		var payload gamesResponse
 		if err := dec.Decode(&payload); err != nil {
-			return nil, 0, err
+			return nil, 0, err //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 		}
 		mapped := make([]domaingames.Game, 0, len(payload.Data))
 		for _, g := range payload.Data {
@@ -75,7 +75,14 @@ func (c *Client) FetchGames(ctx context.Context, date string, tz string) ([]doma
 		return mapped, payload.Meta.TotalPages, nil
 	}
 
-	games, err := fetchPaged(ctx, c.maxPages, c.pageDelay, c.now, c.httpClient, buildReq, decode)
+	games, err := fetchPaged(ctx, pageSource[domaingames.Game]{
+		maxPages:  c.maxPages,
+		pageDelay: c.pageDelay,
+		now:       c.now,
+		doer:      c.httpClient,
+		buildReq:  buildReq,
+		decode:    decode,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +92,7 @@ func (c *Client) FetchGames(ctx context.Context, date string, tz string) ([]doma
 func (c *Client) buildRequest(ctx context.Context, date string, page int, loc *time.Location) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/games", nil)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 	}
 
 	q := req.URL.Query()
@@ -103,11 +110,11 @@ func (c *Client) buildRequest(ctx context.Context, date string, page int, loc *t
 
 func (c *Client) resolveDate(date string, loc *time.Location) string {
 	if date != "" {
-		if _, err := timeutil.ParseDate(date); err == nil {
+		if _, err := gamedate.ParseDate(date); err == nil {
 			return date
 		}
 	}
-	return timeutil.FormatDate(c.now().In(loc))
+	return gamedate.FormatDate(c.now().In(loc))
 }
 
 func classifyErrorResponse(resp *http.Response, body []byte, now time.Time) error {
@@ -124,64 +131,79 @@ func classifyErrorResponse(resp *http.Response, body []byte, now time.Time) erro
 	return errors.New(msg)
 }
 
+// pageSource describes how to fetch and decode one page of a list endpoint.
+type pageSource[T any] struct {
+	maxPages  int
+	pageDelay time.Duration
+	now       func() time.Time
+	doer      httpDoer
+	buildReq  func(page int) (*http.Request, error)
+	decode    func(dec *json.Decoder) ([]T, int, error)
+}
+
 // fetchPaged centralizes pagination and error handling for list endpoints.
-func fetchPaged[T any](
-	ctx context.Context,
-	maxPages int,
-	pageDelay time.Duration,
-	now func() time.Time,
-	doer httpDoer,
-	buildReq func(page int) (*http.Request, error),
-	decode func(dec *json.Decoder) ([]T, int, error),
-) ([]T, error) {
-	page := 1
+func fetchPaged[T any](ctx context.Context, src pageSource[T]) ([]T, error) {
 	var all []T
 
-	for {
-		req, err := buildReq(page)
+	for page := 1; ; page++ {
+		data, totalPages, err := src.fetchPage(page)
 		if err != nil {
 			return nil, err
 		}
-
-		resp, err := doer.Do(req)
-		if err != nil {
-			return nil, err
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-			_ = resp.Body.Close()
-			return nil, classifyErrorResponse(resp, body, now())
-		}
-
-		data, totalPages, err := decode(json.NewDecoder(resp.Body))
-		_ = resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-
 		all = append(all, data...)
 
-		if totalPages > 0 {
-			if page >= totalPages || page >= maxPages {
-				break
-			}
-		} else {
-			if len(data) == 0 || len(data) < defaultPerPage || page >= maxPages {
-				break
-			}
+		if !src.hasMore(page, totalPages, len(data)) {
+			return all, nil
 		}
-		if pageDelay > 0 {
-			select {
-			case <-ctx.Done():
-				return all, ctx.Err()
-			case <-time.After(pageDelay):
-			}
+		if err := src.wait(ctx); err != nil {
+			return all, err
 		}
-		page++
+	}
+}
+
+func (s pageSource[T]) fetchPage(page int) ([]T, int, error) {
+	req, err := s.buildReq(page)
+	if err != nil {
+		return nil, 0, err
 	}
 
-	return all, nil
+	resp, err := s.doer.Do(req)
+	if err != nil {
+		return nil, 0, err //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, 0, classifyErrorResponse(resp, body, s.now())
+	}
+
+	return s.decode(json.NewDecoder(resp.Body))
+}
+
+// hasMore reports whether another page follows. Without a total page count, a short page is the last one.
+func (s pageSource[T]) hasMore(page, totalPages, received int) bool {
+	if page >= s.maxPages {
+		return false
+	}
+	if totalPages > 0 {
+		return page < totalPages
+	}
+	return received > 0 && received >= defaultPerPage
+}
+
+func (s pageSource[T]) wait(ctx context.Context) error {
+	if s.pageDelay <= 0 {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err() //nolint:wrapcheck // context error is returned as is; wrapping changes its message and identity
+	case <-time.After(s.pageDelay):
+		return nil
+	}
 }
 
 func dedupe[T any](items []T, idFn func(T) string) []T {

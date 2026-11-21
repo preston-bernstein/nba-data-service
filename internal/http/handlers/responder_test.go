@@ -2,21 +2,22 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/preston-bernstein/nba-data-service/internal/testutil"
+	"github.com/preston-bernstein/nba-data-service/internal/testkit"
 )
 
 func TestWriteErrorIncludesRequestID(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	logger, _ := testutil.NewBufferLogger()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
+	logger, _ := testkit.NewBufferLogger()
 
 	req.Header.Set("X-Request-ID", "abc123")
 
-	rr := testutil.ServeRequest(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, r, http.StatusTeapot, "boom", logger)
+	rr := testkit.ServeRequest(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, r, apiError{status: http.StatusTeapot, message: "boom"}, logger)
 	}), req)
 
 	if rr.Code != http.StatusTeapot {
@@ -32,8 +33,8 @@ func TestWriteErrorIncludesRequestID(t *testing.T) {
 }
 
 func TestWriteJSONLogsEncodeError(t *testing.T) {
-	logger, buf := testutil.NewBufferLogger()
-	rr := testutil.Serve(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	logger, buf := testkit.NewBufferLogger()
+	rr := testkit.Serve(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, make(chan int), logger)
 	}), http.MethodGet, "/encode-error", nil)
 
@@ -46,11 +47,11 @@ func TestWriteJSONLogsEncodeError(t *testing.T) {
 }
 
 func TestWriteErrorFallsBackToHeaderRequestID(t *testing.T) {
-	logger, _ := testutil.NewBufferLogger()
+	logger, _ := testkit.NewBufferLogger()
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
 	req.Header.Set("X-Request-ID", "header-id")
-	writeError(rr, req, http.StatusTeapot, "boom", logger)
+	writeError(rr, req, apiError{status: http.StatusTeapot, message: "boom"}, logger)
 	if !bytes.Contains(rr.Body.Bytes(), []byte("header-id")) {
 		t.Fatalf("expected header request id used when context missing")
 	}

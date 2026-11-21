@@ -3,9 +3,7 @@ package providers
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -31,7 +29,7 @@ func (f *flakeyProvider) FetchGames(ctx context.Context, date string, tz string)
 
 func TestRetryingProviderRetriesAndSucceeds(t *testing.T) {
 	fp := &flakeyProvider{failures: 2}
-	rp := NewRetryingProvider(fp, slog.Default(), metrics.NewRecorder(), "flakey", 3, 1*time.Millisecond)
+	rp := NewRetryingProvider(fp, RetryConfig{Logger: slog.Default(), Metrics: metrics.NewRecorder(), Name: "flakey", MaxAttempts: 3, Backoff: 1 * time.Millisecond})
 
 	games, err := rp.FetchGames(context.Background(), "", "")
 	if err != nil {
@@ -47,7 +45,7 @@ func TestRetryingProviderRetriesAndSucceeds(t *testing.T) {
 
 func TestRetryingProviderStopsAfterMaxAttempts(t *testing.T) {
 	fp := &flakeyProvider{failures: 5}
-	rp := NewRetryingProvider(fp, nil, metrics.NewRecorder(), "flakey", 2, 1*time.Millisecond)
+	rp := NewRetryingProvider(fp, RetryConfig{Metrics: metrics.NewRecorder(), Name: "flakey", MaxAttempts: 2, Backoff: 1 * time.Millisecond})
 
 	_, err := rp.FetchGames(context.Background(), "", "")
 	if err == nil {
@@ -60,7 +58,7 @@ func TestRetryingProviderStopsAfterMaxAttempts(t *testing.T) {
 
 func TestRetryingProviderRespectsContextCancel(t *testing.T) {
 	fp := &flakeyProvider{failures: 5}
-	rp := NewRetryingProvider(fp, nil, metrics.NewRecorder(), "flakey", 3, time.Hour)
+	rp := NewRetryingProvider(fp, RetryConfig{Metrics: metrics.NewRecorder(), Name: "flakey", MaxAttempts: 3, Backoff: time.Hour})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -73,7 +71,7 @@ func TestRetryingProviderRespectsContextCancel(t *testing.T) {
 
 func TestRetryingProviderUsesCustomBackoff(t *testing.T) {
 	fp := &flakeyProvider{failures: 1}
-	rp := NewRetryingProvider(fp, nil, metrics.NewRecorder(), "flakey", 2, time.Hour).(*retryingProvider)
+	rp := NewRetryingProvider(fp, RetryConfig{Metrics: metrics.NewRecorder(), Name: "flakey", MaxAttempts: 2, Backoff: time.Hour}).(*retryingProvider)
 
 	calls := 0
 	rp.backoffFn = func(attempt int) time.Duration {
@@ -90,7 +88,7 @@ func TestRetryingProviderUsesCustomBackoff(t *testing.T) {
 
 func TestRetryingProviderRecordsRateLimitMetrics(t *testing.T) {
 	rec := metrics.NewRecorder()
-	rp := NewRetryingProvider(&rateLimitThenSuccessProvider{}, nil, rec, "rl", 2, time.Millisecond).(*retryingProvider)
+	rp := NewRetryingProvider(&rateLimitThenSuccessProvider{}, RetryConfig{Metrics: rec, Name: "rl", MaxAttempts: 2, Backoff: time.Millisecond}).(*retryingProvider)
 	rp.backoffFn = func(attempt int) time.Duration {
 		_ = attempt
 		return 0 // avoid sleep in tests
@@ -117,8 +115,8 @@ func TestRetryingProviderRecordsRateLimitMetrics(t *testing.T) {
 
 func TestRetryingProviderDelaySelection(t *testing.T) {
 	rec := metrics.NewRecorder()
-	rp := NewRetryingProvider(&rateLimitThenSuccessProvider{}, nil, rec, "rl", 2, time.Millisecond).(*retryingProvider)
-	rp.rng = rand.New(rand.NewSource(1))
+	rp := NewRetryingProvider(&rateLimitThenSuccessProvider{}, RetryConfig{Metrics: rec, Name: "rl", MaxAttempts: 2, Backoff: time.Millisecond}).(*retryingProvider)
+	rp.rng = newJitterRNG(1)
 	rp.backoffFn = func(attempt int) time.Duration {
 		_ = attempt
 		return 50 * time.Millisecond
@@ -144,7 +142,8 @@ func TestRetryingProviderDelaySelection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			delay := rp.computeDelay(tt.err, 1)
-			if rlErr, ok := tt.err.(*RateLimitError); ok && rlErr.RetryAfter > 0 {
+			var rlErr *RateLimitError
+			if errors.As(tt.err, &rlErr) && rlErr.RetryAfter > 0 {
 				if delay != tt.expected {
 					t.Fatalf("expected retry-after delay %s, got %s", tt.expected, delay)
 				}
@@ -163,8 +162,8 @@ func TestRetryingProviderDelaySelection(t *testing.T) {
 
 func TestNewRetryingProviderWithRNG(t *testing.T) {
 	fp := &flakeyProvider{failures: 1}
-	rng := rand.New(rand.NewSource(2))
-	rp := NewRetryingProviderWithRNG(fp, nil, metrics.NewRecorder(), "flakey", rng, 2, time.Millisecond)
+	rng := newJitterRNG(2)
+	rp := NewRetryingProvider(fp, RetryConfig{Metrics: metrics.NewRecorder(), Name: "flakey", RNG: rng, MaxAttempts: 2, Backoff: time.Millisecond})
 
 	games, err := rp.FetchGames(context.Background(), "", "")
 	if err != nil {
@@ -177,7 +176,7 @@ func TestNewRetryingProviderWithRNG(t *testing.T) {
 
 func TestNewRetryingProviderWithDefaultRNG(t *testing.T) {
 	fp := &flakeyProvider{failures: 0}
-	rp := NewRetryingProviderWithRNG(fp, nil, metrics.NewRecorder(), "flakey", nil, 0, 0)
+	rp := NewRetryingProvider(fp, RetryConfig{Metrics: metrics.NewRecorder(), Name: "flakey"})
 	games, err := rp.FetchGames(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
@@ -188,7 +187,7 @@ func TestNewRetryingProviderWithDefaultRNG(t *testing.T) {
 }
 
 func TestNewRetryingProviderWithNilProviderSetsFallbackName(t *testing.T) {
-	rp := NewRetryingProviderWithRNG(nil, nil, metrics.NewRecorder(), "", nil, 0, 0).(*retryingProvider)
+	rp := NewRetryingProvider(nil, RetryConfig{Metrics: metrics.NewRecorder()}).(*retryingProvider)
 	if rp.providerName != "provider" {
 		t.Fatalf("expected fallback provider name, got %s", rp.providerName)
 	}
@@ -201,7 +200,7 @@ func TestNewRetryingProviderWithNilProviderSetsFallbackName(t *testing.T) {
 }
 
 func TestRetryingProviderJitterDelayAndSleep(t *testing.T) {
-	rp := &retryingProvider{rng: rand.New(rand.NewSource(1))}
+	rp := &retryingProvider{rng: newJitterRNG(1)}
 
 	if got := rp.jitterDelay(0); got != 0 {
 		t.Fatalf("expected zero jitter for zero base, got %s", got)
@@ -220,7 +219,7 @@ func TestRetryingProviderJitterDelayAndSleep(t *testing.T) {
 }
 
 func TestRetryingProviderLogRetryIncludesRateLimitFields(t *testing.T) {
-	bufLogger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	bufLogger := slog.New(slog.DiscardHandler)
 	rp := &retryingProvider{
 		logger:       bufLogger,
 		providerName: "test",

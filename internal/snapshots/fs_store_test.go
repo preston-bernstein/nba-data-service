@@ -11,13 +11,13 @@ import (
 
 func TestFSStoreLoadGames(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "games"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "games"), 0o750); err != nil {
 		t.Fatalf("failed to create games dir: %v", err)
 	}
 
 	snap := domaingames.TodayResponse{Date: "2024-01-02", Games: []domaingames.Game{{ID: "g1"}}}
 	data, _ := json.Marshal(snap)
-	if err := os.WriteFile(filepath.Join(dir, "games", "2024-01-02.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "games", "2024-01-02.json"), data, 0o600); err != nil {
 		t.Fatalf("failed to write games snapshot: %v", err)
 	}
 
@@ -47,7 +47,7 @@ func TestFSStoreErrors(t *testing.T) {
 
 func TestFSStoreFindGameByID(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "games"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "games"), 0o750); err != nil {
 		t.Fatalf("failed to create games dir: %v", err)
 	}
 
@@ -56,7 +56,7 @@ func TestFSStoreFindGameByID(t *testing.T) {
 		Games: []domaingames.Game{{ID: "game-1"}, {ID: "game-2"}},
 	}
 	data, _ := json.Marshal(snap)
-	if err := os.WriteFile(filepath.Join(dir, "games", "2024-01-15.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "games", "2024-01-15.json"), data, 0o600); err != nil {
 		t.Fatalf("failed to write snapshot: %v", err)
 	}
 

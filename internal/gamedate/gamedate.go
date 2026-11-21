@@ -1,0 +1,27 @@
+package gamedate
+
+import "time"
+
+// DateLayout defines the canonical date format (YYYY-MM-DD).
+const DateLayout = "2006-01-02"
+
+// ParseDate parses a YYYY-MM-DD date string.
+func ParseDate(value string) (time.Time, error) {
+	return time.Parse(DateLayout, value) //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
+}
+
+// FormatDate formats a time as YYYY-MM-DD in its current location.
+func FormatDate(t time.Time) string {
+	return t.Format(DateLayout)
+}
+
+// ResolveLocation loads an IANA timezone name or falls back to UTC.
+func ResolveLocation(name string) *time.Location {
+	if name == "" {
+		return time.UTC
+	}
+	if loc, err := time.LoadLocation(name); err == nil {
+		return loc
+	}
+	return time.UTC
+}

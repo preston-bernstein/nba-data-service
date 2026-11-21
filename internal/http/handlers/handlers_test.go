@@ -15,8 +15,8 @@ import (
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/poller"
 	"github.com/preston-bernstein/nba-data-service/internal/snapshots"
+	"github.com/preston-bernstein/nba-data-service/internal/testkit"
 	"github.com/preston-bernstein/nba-data-service/internal/teststubs"
-	"github.com/preston-bernstein/nba-data-service/internal/testutil"
 )
 
 func newHandler(snaps snapshots.Store, statusFn func() poller.Status) *Handler {
@@ -38,11 +38,11 @@ func storeWithGames(date string, games []domaingames.Game) *teststubs.StubSnapsh
 func TestHealth(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	rr := testutil.Serve(h, http.MethodGet, "/health", nil)
-	testutil.AssertStatus(t, rr, http.StatusOK)
+	rr := testkit.Serve(h, http.MethodGet, "/health", nil)
+	testkit.AssertStatus(t, rr, http.StatusOK)
 
 	var resp map[string]string
-	testutil.DecodeJSON(t, rr, &resp)
+	testkit.DecodeJSON(t, rr, &resp)
 	if resp["status"] != "ok" {
 		t.Fatalf("expected status ok, got %s", resp["status"])
 	}
@@ -51,15 +51,15 @@ func TestHealth(t *testing.T) {
 func TestHealthShuttingDownReturnsServiceUnavailable(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
 	ctx, cancel := context.WithCancel(req.Context())
 	cancel()
 	req = req.WithContext(ctx)
-	rr := testutil.ServeRequest(http.HandlerFunc(h.Health), req)
+	rr := testkit.ServeRequest(http.HandlerFunc(h.Health), req)
 
-	testutil.AssertStatus(t, rr, http.StatusServiceUnavailable)
+	testkit.AssertStatus(t, rr, http.StatusServiceUnavailable)
 	var resp map[string]string
-	testutil.DecodeJSON(t, rr, &resp)
+	testkit.DecodeJSON(t, rr, &resp)
 	if resp["error"] != "shutting down" {
 		t.Fatalf("unexpected error %q", resp["error"])
 	}
@@ -67,22 +67,22 @@ func TestHealthShuttingDownReturnsServiceUnavailable(t *testing.T) {
 func TestGamesByDateRequiresDate(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	rr := testutil.Serve(h, http.MethodGet, "/games", nil)
-	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+	rr := testkit.Serve(h, http.MethodGet, "/games", nil)
+	testkit.AssertStatus(t, rr, http.StatusBadRequest)
 }
 
 func TestGamesByDateUsesSnapshot(t *testing.T) {
 	date := "2024-02-01"
-	snaps := storeWithResponse(date, testutil.SampleTodayResponse(date, "snapshot-game"))
+	snaps := storeWithResponse(date, testkit.SampleTodayResponse(date, "snapshot-game"))
 
 	h := newHandler(snaps, nil)
 	h.now = func() time.Time { return time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC) }
 
-	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-02-01", nil)
-	testutil.AssertStatus(t, rr, http.StatusOK)
+	rr := testkit.Serve(h, http.MethodGet, "/games?date=2024-02-01", nil)
+	testkit.AssertStatus(t, rr, http.StatusOK)
 
 	var resp domaingames.TodayResponse
-	testutil.DecodeJSON(t, rr, &resp)
+	testkit.DecodeJSON(t, rr, &resp)
 
 	if resp.Date != "2024-02-01" {
 		t.Fatalf("expected date to reflect query param, got %s", resp.Date)
@@ -95,8 +95,8 @@ func TestGamesByDateUsesSnapshot(t *testing.T) {
 func TestGamesByDateWithInvalidDateReturnsBadRequest(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	rr := testutil.Serve(h, http.MethodGet, "/games?date=not-a-date", nil)
-	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+	rr := testkit.Serve(h, http.MethodGet, "/games?date=not-a-date", nil)
+	testkit.AssertStatus(t, rr, http.StatusBadRequest)
 }
 
 func TestGamesByDateOutOfRangeReturnsBadRequest(t *testing.T) {
@@ -104,21 +104,21 @@ func TestGamesByDateOutOfRangeReturnsBadRequest(t *testing.T) {
 	h.now = func() time.Time { return time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC) }
 
 	// 8 days before - should fail
-	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-01-06", nil)
-	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+	rr := testkit.Serve(h, http.MethodGet, "/games?date=2024-01-06", nil)
+	testkit.AssertStatus(t, rr, http.StatusBadRequest)
 
 	// 8 days after - should fail
-	rr = testutil.Serve(h, http.MethodGet, "/games?date=2024-01-24", nil)
-	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+	rr = testkit.Serve(h, http.MethodGet, "/games?date=2024-01-24", nil)
+	testkit.AssertStatus(t, rr, http.StatusBadRequest)
 
 	// 7 days before - should pass (with snapshot error, but not bad request)
-	rr = testutil.Serve(h, http.MethodGet, "/games?date=2024-01-08", nil)
+	rr = testkit.Serve(h, http.MethodGet, "/games?date=2024-01-08", nil)
 	if rr.Code == http.StatusBadRequest {
 		t.Fatalf("expected date within range to not return bad request")
 	}
 
 	// 7 days after - should pass
-	rr = testutil.Serve(h, http.MethodGet, "/games?date=2024-01-22", nil)
+	rr = testkit.Serve(h, http.MethodGet, "/games?date=2024-01-22", nil)
 	if rr.Code == http.StatusBadRequest {
 		t.Fatalf("expected date within range to not return bad request")
 	}
@@ -130,34 +130,34 @@ func TestGamesByDateLogsSnapshotErrors(t *testing.T) {
 	h := newHandler(snaps, nil)
 	h.now = func() time.Time { return time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC) }
 
-	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-02-01", nil)
-	testutil.AssertStatus(t, rr, http.StatusBadGateway)
+	rr := testkit.Serve(h, http.MethodGet, "/games?date=2024-02-01", nil)
+	testkit.AssertStatus(t, rr, http.StatusBadGateway)
 }
 
 func TestGamesByDateSnapshotMissingReturnsBadGateway(t *testing.T) {
 	h := newHandler(nil, nil)
 	h.now = func() time.Time { return time.Date(2024, 4, 1, 0, 0, 0, 0, time.UTC) }
 
-	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-04-01", nil)
+	rr := testkit.Serve(h, http.MethodGet, "/games?date=2024-04-01", nil)
 
-	testutil.AssertStatus(t, rr, http.StatusBadGateway)
+	testkit.AssertStatus(t, rr, http.StatusBadGateway)
 }
 
 func TestGamesByDateWithNilSnapshotsReturnsBadGateway(t *testing.T) {
 	h := newHandler(nil, nil)
 	h.now = func() time.Time { return time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC) }
-	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-06-01", nil)
-	testutil.AssertStatus(t, rr, http.StatusBadGateway)
+	rr := testkit.Serve(h, http.MethodGet, "/games?date=2024-06-01", nil)
+	testkit.AssertStatus(t, rr, http.StatusBadGateway)
 }
 
 func TestGamesByDateWithLoggerLogsSnapshot(t *testing.T) {
-	logger, buf := testutil.NewBufferLogger()
+	logger, buf := testkit.NewBufferLogger()
 	date := "2024-07-01"
-	snaps := storeWithResponse(date, testutil.SampleTodayResponse(date, "logged-snap"))
+	snaps := storeWithResponse(date, testkit.SampleTodayResponse(date, "logged-snap"))
 	h := NewHandler(snaps, logger, nil, nil)
 	h.now = func() time.Time { return time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC) }
-	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-07-01", nil)
-	testutil.AssertStatus(t, rr, http.StatusOK)
+	rr := testkit.Serve(h, http.MethodGet, "/games?date=2024-07-01", nil)
+	testkit.AssertStatus(t, rr, http.StatusOK)
 	if buf.Len() == 0 {
 		t.Fatalf("expected snapshot log when logger provided")
 	}
@@ -165,18 +165,18 @@ func TestGamesByDateWithLoggerLogsSnapshot(t *testing.T) {
 
 func TestGameByID(t *testing.T) {
 	date := "2024-01-01"
-	game := testutil.SampleGame("id-1")
+	game := testkit.SampleGame("id-1")
 	game.StartTime = time.Date(2024, 1, 1, 15, 30, 0, 0, time.UTC).Format(time.RFC3339)
 	snaps := storeWithGames(date, []domaingames.Game{game})
 	h := newHandler(snaps, nil)
 	h.now = func() time.Time { return time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC) }
 
-	rr := testutil.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games/id-1", nil)
+	rr := testkit.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games/id-1", nil)
 
-	testutil.AssertStatus(t, rr, http.StatusOK)
+	testkit.AssertStatus(t, rr, http.StatusOK)
 
 	var resp domaingames.Game
-	testutil.DecodeJSON(t, rr, &resp)
+	testkit.DecodeJSON(t, rr, &resp)
 
 	if resp.ID != "id-1" {
 		t.Fatalf("expected game id id-1, got %s", resp.ID)
@@ -186,9 +186,9 @@ func TestGameByID(t *testing.T) {
 func TestGameByIDInvalid(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	rr := testutil.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games", nil)
+	rr := testkit.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games", nil)
 
-	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+	testkit.AssertStatus(t, rr, http.StatusBadRequest)
 }
 
 func TestGameByIDNotFound(t *testing.T) {
@@ -197,27 +197,27 @@ func TestGameByIDNotFound(t *testing.T) {
 	h := newHandler(snaps, nil)
 	h.now = func() time.Time { return time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC) }
 
-	rr := testutil.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games/unknown", nil)
+	rr := testkit.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games/unknown", nil)
 
-	testutil.AssertStatus(t, rr, http.StatusNotFound)
+	testkit.AssertStatus(t, rr, http.StatusNotFound)
 }
 
 func TestGameByIDInvalidCharacters(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/games/bad%20id", nil)
-	rr := testutil.ServeRequest(http.HandlerFunc(h.GameByID), req)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games/bad%20id", nil)
+	rr := testkit.ServeRequest(http.HandlerFunc(h.GameByID), req)
 
-	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+	testkit.AssertStatus(t, rr, http.StatusBadRequest)
 }
 
 func TestGameByIDWithEncodedSlash(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/games/foo%2Fbar", nil)
-	rr := testutil.ServeRequest(http.HandlerFunc(h.GameByID), req)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games/foo%2Fbar", nil)
+	rr := testkit.ServeRequest(http.HandlerFunc(h.GameByID), req)
 
-	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+	testkit.AssertStatus(t, rr, http.StatusBadRequest)
 }
 
 func TestGameByIDUnescapeError(t *testing.T) {
@@ -231,34 +231,34 @@ func TestGameByIDUnescapeError(t *testing.T) {
 		},
 		Header: make(http.Header),
 	}
-	rr := testutil.ServeRequest(http.HandlerFunc(h.GameByID), req)
+	rr := testkit.ServeRequest(http.HandlerFunc(h.GameByID), req)
 
-	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+	testkit.AssertStatus(t, rr, http.StatusBadRequest)
 }
 
 func TestGameByIDRejectsGamesKeyword(t *testing.T) {
 	h := newHandler(nil, nil)
-	rr := testutil.Serve(h, http.MethodGet, "/games/games", nil)
-	testutil.AssertStatus(t, rr, http.StatusBadRequest)
+	rr := testkit.Serve(h, http.MethodGet, "/games/games", nil)
+	testkit.AssertStatus(t, rr, http.StatusBadRequest)
 }
 
 func TestGameByIDNilSnapshotStore(t *testing.T) {
 	h := NewHandler(nil, nil, nil, nil)
-	rr := testutil.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games/id-1", nil)
-	testutil.AssertStatus(t, rr, http.StatusBadGateway)
+	rr := testkit.Serve(http.HandlerFunc(h.GameByID), http.MethodGet, "/games/id-1", nil)
+	testkit.AssertStatus(t, rr, http.StatusBadGateway)
 }
 
 func TestGamesByDateReturnsSnapshot(t *testing.T) {
 	date := "2024-03-01"
-	snaps := storeWithResponse(date, testutil.SampleTodayResponse(date, "snap-id"))
+	snaps := storeWithResponse(date, testkit.SampleTodayResponse(date, "snap-id"))
 	h := newHandler(snaps, nil)
 	h.now = func() time.Time { return time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC) }
 
-	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-03-01", nil)
-	testutil.AssertStatus(t, rr, http.StatusOK)
+	rr := testkit.Serve(h, http.MethodGet, "/games?date=2024-03-01", nil)
+	testkit.AssertStatus(t, rr, http.StatusOK)
 
 	var resp domaingames.TodayResponse
-	testutil.DecodeJSON(t, rr, &resp)
+	testkit.DecodeJSON(t, rr, &resp)
 	if resp.Date != "2024-03-01" || len(resp.Games) != 1 || resp.Games[0].ID != "snap-id" {
 		t.Fatalf("expected snapshot response, got %+v", resp)
 	}
@@ -280,8 +280,8 @@ func TestMethodNotAllowedHandlers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rr := testutil.Serve(http.HandlerFunc(tt.fn), http.MethodPost, tt.path, nil)
-			testutil.AssertStatus(t, rr, http.StatusMethodNotAllowed)
+			rr := testkit.Serve(http.HandlerFunc(tt.fn), http.MethodPost, tt.path, nil)
+			testkit.AssertStatus(t, rr, http.StatusMethodNotAllowed)
 		})
 	}
 }
@@ -296,14 +296,14 @@ func TestRequestIDPropagatesThroughMiddleware(t *testing.T) {
 	mux.HandleFunc("/games/", h.GameByID)
 	wrapped := middleware.LoggingMiddleware(nil, nil, mux)
 
-	req := httptest.NewRequest(http.MethodGet, "/games/missing", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games/missing", nil)
 	req.Header.Set("X-Request-ID", "abc123")
-	rr := testutil.ServeRequest(wrapped, req)
+	rr := testkit.ServeRequest(wrapped, req)
 
-	testutil.AssertStatus(t, rr, http.StatusNotFound)
+	testkit.AssertStatus(t, rr, http.StatusNotFound)
 
 	var resp map[string]string
-	testutil.DecodeJSON(t, rr, &resp)
+	testkit.DecodeJSON(t, rr, &resp)
 	if resp["requestId"] != "abc123" {
 		t.Fatalf("expected requestId propagated, got %s", resp["requestId"])
 	}
@@ -315,8 +315,8 @@ func TestRequestIDPropagatesThroughMiddleware(t *testing.T) {
 func TestReady(t *testing.T) {
 	h := newHandler(nil, nil)
 
-	rr := testutil.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
-	testutil.AssertStatus(t, rr, http.StatusOK)
+	rr := testkit.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
+	testkit.AssertStatus(t, rr, http.StatusOK)
 }
 
 func TestReadyWithStatus(t *testing.T) {
@@ -326,9 +326,9 @@ func TestReadyWithStatus(t *testing.T) {
 		}
 	})
 
-	rr := testutil.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
+	rr := testkit.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
 
-	testutil.AssertStatus(t, rr, http.StatusOK)
+	testkit.AssertStatus(t, rr, http.StatusOK)
 }
 
 func TestReadyNotReady(t *testing.T) {
@@ -336,9 +336,9 @@ func TestReadyNotReady(t *testing.T) {
 		return poller.Status{}
 	})
 
-	rr := testutil.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
+	rr := testkit.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
 
-	testutil.AssertStatus(t, rr, http.StatusServiceUnavailable)
+	testkit.AssertStatus(t, rr, http.StatusServiceUnavailable)
 }
 
 func TestReadyNotReadyUsesLastError(t *testing.T) {
@@ -348,11 +348,11 @@ func TestReadyNotReadyUsesLastError(t *testing.T) {
 		}
 	})
 
-	rr := testutil.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
+	rr := testkit.Serve(http.HandlerFunc(h.Ready), http.MethodGet, "/ready", nil)
 
-	testutil.AssertStatus(t, rr, http.StatusServiceUnavailable)
+	testkit.AssertStatus(t, rr, http.StatusServiceUnavailable)
 	var resp map[string]string
-	testutil.DecodeJSON(t, rr, &resp)
+	testkit.DecodeJSON(t, rr, &resp)
 	if resp["error"] != "upstream down" {
 		t.Fatalf("expected last error propagated, got %s", resp["error"])
 	}
@@ -360,14 +360,14 @@ func TestReadyNotReadyUsesLastError(t *testing.T) {
 
 func TestServeHTTPNotFound(t *testing.T) {
 	h := newHandler(nil, nil)
-	rr := testutil.Serve(h, http.MethodGet, "/unknown", nil)
-	testutil.AssertStatus(t, rr, http.StatusNotFound)
+	rr := testkit.Serve(h, http.MethodGet, "/unknown", nil)
+	testkit.AssertStatus(t, rr, http.StatusNotFound)
 }
 
 // Routing via ServeHTTP (switch on path)
 func TestServeHTTPRoutes(t *testing.T) {
 	date := "2024-01-01"
-	game := testutil.SampleGame("id-1")
+	game := testkit.SampleGame("id-1")
 	game.StartTime = time.Now().Format(time.RFC3339)
 	snaps := storeWithGames(date, []domaingames.Game{game})
 	h := NewHandler(snaps, nil, func() poller.Status { return poller.Status{LastSuccess: time.Now()} }, nil)
@@ -384,8 +384,8 @@ func TestServeHTTPRoutes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		rr := testutil.Serve(h, http.MethodGet, tt.path, nil)
-		testutil.AssertStatus(t, rr, tt.status)
+		rr := testkit.Serve(h, http.MethodGet, tt.path, nil)
+		testkit.AssertStatus(t, rr, tt.status)
 	}
 }
 
@@ -411,7 +411,7 @@ func TestServeHTTPRoutingAndMethods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(tt.method, tt.path, nil)
+		req := httptest.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)
 		h.ServeHTTP(rr, req)
 		if rr.Code != tt.status {
 			t.Fatalf("path %s method %s: expected %d, got %d", tt.path, tt.method, tt.status, rr.Code)
@@ -425,8 +425,8 @@ func TestGamesByDateUpstreamErrorsReturnBadGateway(t *testing.T) {
 	h := newHandler(snaps, nil)
 	h.now = func() time.Time { return time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC) }
 
-	rr := testutil.Serve(h, http.MethodGet, "/games?date=2024-02-01", nil)
-	testutil.AssertStatus(t, rr, http.StatusBadGateway)
+	rr := testkit.Serve(h, http.MethodGet, "/games?date=2024-02-01", nil)
+	testkit.AssertStatus(t, rr, http.StatusBadGateway)
 }
 
 func TestRequestIDNilRequest(t *testing.T) {
@@ -436,10 +436,10 @@ func TestRequestIDNilRequest(t *testing.T) {
 }
 
 func TestLoggerFromContextPrefersAttachedLogger(t *testing.T) {
-	fallback, _ := testutil.NewBufferLogger()
-	ctxLogger, _ := testutil.NewBufferLogger()
+	fallback, _ := testkit.NewBufferLogger()
+	ctxLogger, _ := testkit.NewBufferLogger()
 	ctx := logging.WithLogger(context.Background(), ctxLogger)
-	req := httptest.NewRequest(http.MethodGet, "/games?date=2024-01-01", nil).WithContext(ctx)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games?date=2024-01-01", nil).WithContext(ctx)
 
 	got := loggerFromContext(req, fallback)
 	if got != ctxLogger {
@@ -448,7 +448,7 @@ func TestLoggerFromContextPrefersAttachedLogger(t *testing.T) {
 }
 
 func TestLoggerFromContextNilRequestReturnsFallback(t *testing.T) {
-	fallback, _ := testutil.NewBufferLogger()
+	fallback, _ := testkit.NewBufferLogger()
 	if got := loggerFromContext(nil, fallback); got != fallback {
 		t.Fatalf("expected fallback logger when request is nil")
 	}
@@ -483,7 +483,7 @@ func BenchmarkGamesByDate(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/games?date=2024-01-02", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games?date=2024-01-02", nil)
 		h.GamesToday(rr, req)
 	}
 }
@@ -516,7 +516,7 @@ func BenchmarkGameByID(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/games/game-1", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/games/game-1", nil)
 		h.GameByID(rr, req)
 	}
 }

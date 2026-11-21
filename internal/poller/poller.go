@@ -8,10 +8,10 @@ import (
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/events"
+	"github.com/preston-bernstein/nba-data-service/internal/gamedate"
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
-	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 const (
@@ -64,22 +64,32 @@ func (s Status) IsReady() bool {
 	return s.ConsecutiveFailures < 3
 }
 
+// Options holds the optional settings of a Poller. Zero values select the defaults.
+type Options struct {
+	Logger  *slog.Logger
+	Metrics *metrics.Recorder
+	// Interval defaults to defaultInterval when <= 0.
+	Interval time.Duration
+	// Location defaults to UTC when nil.
+	Location *time.Location
+}
+
 // New constructs a Poller with sane defaults.
-func New(provider providers.GameProvider, writer SnapshotWriter, logger *slog.Logger, recorder *metrics.Recorder, interval time.Duration, loc *time.Location) *Poller {
-	if interval <= 0 {
-		interval = defaultInterval
+func New(provider providers.GameProvider, writer SnapshotWriter, opts Options) *Poller {
+	if opts.Interval <= 0 {
+		opts.Interval = defaultInterval
 	}
-	if loc == nil {
-		loc = time.UTC
+	if opts.Location == nil {
+		opts.Location = time.UTC
 	}
 	return &Poller{
 		provider: provider,
 		writer:   writer,
-		logger:   logger,
-		metrics:  recorder,
-		interval: interval,
+		logger:   opts.Logger,
+		metrics:  opts.Metrics,
+		interval: opts.Interval,
 		now:      time.Now,
-		loc:      loc,
+		loc:      opts.Location,
 		detector: events.NewDetector(),
 		done:     make(chan struct{}),
 		stopped:  make(chan struct{}),
@@ -146,7 +156,7 @@ func (p *Poller) Stop(ctx context.Context) error {
 	case <-p.stopped:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return ctx.Err() //nolint:wrapcheck // context error is returned as is; wrapping changes its message and identity
 	}
 }
 
@@ -154,8 +164,8 @@ func (p *Poller) fetchOnce(ctx context.Context) {
 	start := time.Now()
 	p.recordAttempt(start)
 	nowInLoc := p.now().In(p.loc)
-	today := timeutil.FormatDate(nowInLoc)
-	yesterday := timeutil.FormatDate(nowInLoc.AddDate(0, 0, -1))
+	today := gamedate.FormatDate(nowInLoc)
+	yesterday := gamedate.FormatDate(nowInLoc.AddDate(0, 0, -1))
 
 	// Fetch and write today (primary); poller health is based on today.
 	todayGames, err := p.provider.FetchGames(ctx, today, "")

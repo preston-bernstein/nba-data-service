@@ -2,7 +2,6 @@ package snapshots
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +9,7 @@ import (
 	"time"
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
-	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
+	"github.com/preston-bernstein/nba-data-service/internal/gamedate"
 )
 
 type snapshotKind string
@@ -119,24 +118,20 @@ func (w *Writer) writeSnapshot(kind snapshotKind, date string, payload any, page
 		pageNum = page[0]
 	}
 	target := w.snapshotPath(kind, date, pageNum)
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil { //nolint:gosec // snapshot directories keep their current mode for other readers; a tighter mode changes access
+		return err //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 	}
 
-	tmp := target + ".tmp"
-	data, err := json.MarshalIndent(payload, "", "  ")
+	data, err := encodeJSON(payload)
 	if err != nil {
 		return err
 	}
 
-	if existing, err := os.ReadFile(target); err == nil && bytes.Equal(existing, data) {
+	if existing, err := os.ReadFile(filepath.Clean(target)); err == nil && bytes.Equal(existing, data) {
 		return w.updateManifest(kind, date)
 	}
 
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, target); err != nil {
+	if err := writeFileAtomic(target, data); err != nil {
 		return err
 	}
 
@@ -160,8 +155,7 @@ func (w *Writer) updateManifest(kind snapshotKind, date string) error {
 		return err
 	}
 
-	switch kind {
-	case kindGames:
+	if kind == kindGames {
 		m.Games.Dates = pruned
 		m.Games.LastRefreshed = now
 		m.Retention.GamesDays = w.retentionDays
@@ -186,7 +180,7 @@ func (w *Writer) listDates(kind snapshotKind) ([]string, error) {
 		if os.IsNotExist(err) {
 			return []string{}, nil
 		}
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 	}
 	var (
 		dates []string
@@ -216,7 +210,7 @@ func (w *Writer) pruneOldSnapshots(kind snapshotKind, dates []string) ([]string,
 	cutoff := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -w.retentionDays)
 	var keep []string
 	for _, d := range dates {
-		parsed, err := timeutil.ParseDate(d)
+		parsed, err := gamedate.ParseDate(d)
 		if err != nil {
 			keep = append(keep, d)
 			continue

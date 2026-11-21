@@ -3,8 +3,11 @@
 package opsec
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -25,11 +28,9 @@ const knownSafeFixture = "172.16.0.1"
 
 const selfPath = "internal/opsec/no_private_literals_test.go"
 
-// TestNoPrivateIPLiteralsInTrackedSource fails if a real RFC1918 address
-// literal reappears anywhere in the tracked working tree. Scope is
-// deliberately "git ls-files" (tracked files only) so a developer's local
-// .env or other gitignored file never trips it.
-func TestNoPrivateIPLiteralsInTrackedSource(t *testing.T) {
+// scanTrackedLines calls check for every line of every tracked file except this one.
+func scanTrackedLines(t *testing.T, check func(rel string, lineNo int, line string)) {
+	t.Helper()
 	root, listing := trackedFiles(t)
 
 	for _, rel := range listing {
@@ -37,7 +38,7 @@ func TestNoPrivateIPLiteralsInTrackedSource(t *testing.T) {
 			continue
 		}
 
-		data, err := os.ReadFile(root + "/" + rel)
+		data, err := os.ReadFile(filepath.Clean(filepath.Join(root, rel)))
 		if err != nil {
 			// Not every tracked path is a readable regular file (e.g. a
 			// submodule gitlink); skip anything we can't read as text.
@@ -45,17 +46,38 @@ func TestNoPrivateIPLiteralsInTrackedSource(t *testing.T) {
 		}
 
 		for lineNo, line := range strings.Split(string(data), "\n") {
-			for _, match := range rfc1918Pattern.FindAllString(line, -1) {
-				if match == knownSafeFixture {
-					continue
-				}
-				t.Errorf("%s:%d: literal RFC1918 address %q found in tracked source; "+
-					"use an env var with a loopback default for functional code, a "+
-					"placeholder for docs, or %s for a test fixture that genuinely "+
-					"needs a private address", rel, lineNo+1, match, knownSafeFixture)
-			}
+			check(rel, lineNo+1, line)
 		}
 	}
+}
+
+// TestNoPrivateIPLiteralsInTrackedSource fails if a real RFC1918 address
+// literal reappears anywhere in the tracked working tree. Scope is
+// deliberately "git ls-files" (tracked files only) so a developer's local
+// .env or other gitignored file never trips it.
+func TestNoPrivateIPLiteralsInTrackedSource(t *testing.T) {
+	scanTrackedLines(t, func(rel string, lineNo int, line string) {
+		for _, match := range rfc1918Pattern.FindAllString(line, -1) {
+			if match == knownSafeFixture {
+				continue
+			}
+			t.Errorf("%s:%d: literal RFC1918 address %q found in tracked source; "+
+				"use an env var with a loopback default for functional code, a "+
+				"placeholder for docs, or %s for a test fixture that genuinely "+
+				"needs a private address", rel, lineNo, match, knownSafeFixture)
+		}
+	})
+}
+
+// forbiddenAliasesFromEnv parses the comma-separated OPSEC_FORBIDDEN_LITERALS value.
+func forbiddenAliasesFromEnv(raw string) []string {
+	var forbidden []string
+	for _, s := range strings.Split(raw, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			forbidden = append(forbidden, s)
+		}
+	}
+	return forbidden
 }
 
 // TestNoForbiddenHostAliasesInTrackedSource optionally checks for specific
@@ -68,34 +90,18 @@ func TestNoForbiddenHostAliasesInTrackedSource(t *testing.T) {
 		t.Skip("OPSEC_FORBIDDEN_LITERALS not set, skipping host-alias check")
 	}
 
-	var forbidden []string
-	for _, s := range strings.Split(raw, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			forbidden = append(forbidden, s)
-		}
-	}
+	forbidden := forbiddenAliasesFromEnv(raw)
 	if len(forbidden) == 0 {
 		t.Skip("OPSEC_FORBIDDEN_LITERALS set but empty, skipping host-alias check")
 	}
 
-	root, listing := trackedFiles(t)
-
-	for _, rel := range listing {
-		if rel == selfPath {
-			continue
-		}
-		data, err := os.ReadFile(root + "/" + rel)
-		if err != nil {
-			continue
-		}
-		for lineNo, line := range strings.Split(string(data), "\n") {
-			for _, alias := range forbidden {
-				if strings.Contains(line, alias) {
-					t.Errorf("%s:%d: forbidden literal %q found in tracked source", rel, lineNo+1, alias)
-				}
+	scanTrackedLines(t, func(rel string, lineNo int, line string) {
+		for _, alias := range forbidden {
+			if strings.Contains(line, alias) {
+				t.Errorf("%s:%d: forbidden literal %q found in tracked source", rel, lineNo, alias)
 			}
 		}
-	}
+	})
 }
 
 // trackedFiles returns the repo root and the list of git-tracked file paths
@@ -103,12 +109,12 @@ func TestNoForbiddenHostAliasesInTrackedSource(t *testing.T) {
 func trackedFiles(t *testing.T) (string, []string) {
 	t.Helper()
 
-	root, err := gitOutput("rev-parse", "--show-toplevel")
+	root, err := gitTopLevel()
 	if err != nil {
 		t.Skipf("not inside a git checkout, skipping opsec literal guard: %v", err)
 	}
 
-	listing, err := gitOutput("-C", root, "ls-files")
+	listing, err := gitListFiles(root)
 	if err != nil {
 		t.Skipf("could not list tracked files, skipping opsec literal guard: %v", err)
 	}
@@ -122,10 +128,20 @@ func trackedFiles(t *testing.T) (string, []string) {
 	return root, files
 }
 
-func gitOutput(args ...string) (string, error) {
-	out, err := exec.Command("git", args...).Output()
+func gitTopLevel() (string, error) {
+	out, err := exec.CommandContext(context.Background(), "git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("git rev-parse: %w", err)
+	}
+	return strings.TrimRight(string(out), "\n"), nil
+}
+
+func gitListFiles(root string) (string, error) {
+	cmd := exec.CommandContext(context.Background(), "git", "ls-files")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git ls-files: %w", err)
 	}
 	return strings.TrimRight(string(out), "\n"), nil
 }

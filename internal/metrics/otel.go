@@ -61,7 +61,7 @@ func Setup(ctx context.Context, cfg TelemetryConfig) (*Recorder, http.Handler, f
 		resource.WithAttributes(semconv.ServiceName(cfg.ServiceName)),
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, err //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 	}
 
 	opts = append(opts, sdkmetric.WithResource(res))
@@ -88,7 +88,7 @@ func buildOTLPReader(ctx context.Context, endpoint string, insecure bool) (sdkme
 	}
 	otlpExp, err := otlpmetrichttp.New(ctx, otlpOpts...)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 	}
 	return sdkmetric.NewPeriodicReader(otlpExp, sdkmetric.WithInterval(15*time.Second)), nil
 }
@@ -112,71 +112,57 @@ func prometheusComponents() (sdkmetric.Reader, http.Handler, error) {
 	reg := prometheus.NewRegistry()
 	promExp, err := promexporter.New(promexporter.WithRegisterer(reg))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, err //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
 	}
 	return promExp, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), nil
 }
 
+// instrumentBuilder creates instruments and keeps the first error, so later calls do nothing after a failure.
+type instrumentBuilder struct {
+	meter metric.Meter
+	err   error
+}
+
+func (b *instrumentBuilder) counter(name string) metric.Int64Counter {
+	if b.err != nil {
+		return nil
+	}
+	c, err := b.meter.Int64Counter(name)
+	b.err = err
+	return c
+}
+
+func (b *instrumentBuilder) histogram(name string) metric.Float64Histogram {
+	if b.err != nil {
+		return nil
+	}
+	h, err := b.meter.Float64Histogram(name)
+	b.err = err
+	return h
+}
+
 func newOtelInstruments(provider metric.MeterProvider) (*otelInstruments, error) {
 	meter := provider.Meter("nba-data-service")
-	ctx := context.Background()
+	b := &instrumentBuilder{meter: meter}
 
-	requests, err := meter.Int64Counter("http_requests_total")
-	if err != nil {
-		return nil, err
-	}
-	requestLatency, err := meter.Float64Histogram("http_request_duration_ms")
-	if err != nil {
-		return nil, err
-	}
-
-	providerAttempts, err := meter.Int64Counter("provider_attempts_total")
-	if err != nil {
-		return nil, err
-	}
-	providerErrors, err := meter.Int64Counter("provider_errors_total")
-	if err != nil {
-		return nil, err
-	}
-	providerLatency, err := meter.Float64Histogram("provider_duration_ms")
-	if err != nil {
-		return nil, err
-	}
-	rateLimitHits, err := meter.Int64Counter("provider_rate_limit_hits_total")
-	if err != nil {
-		return nil, err
-	}
-	retryAfter, err := meter.Float64Histogram("provider_retry_after_ms")
-	if err != nil {
-		return nil, err
-	}
-	pollerCycles, err := meter.Int64Counter("poller_cycles_total")
-	if err != nil {
-		return nil, err
-	}
-	pollerErrors, err := meter.Int64Counter("poller_errors_total")
-	if err != nil {
-		return nil, err
-	}
-	pollerLatency, err := meter.Float64Histogram("poller_cycle_duration_ms")
-	if err != nil {
-		return nil, err
-	}
-
-	return &otelInstruments{
-		ctx:               ctx,
+	inst := &otelInstruments{
+		ctx:               context.Background(),
 		meter:             meter,
-		requests:          requests,
-		requestLatencyMs:  requestLatency,
-		providerAttempts:  providerAttempts,
-		providerErrors:    providerErrors,
-		providerLatencyMs: providerLatency,
-		rateLimitHits:     rateLimitHits,
-		retryAfterMs:      retryAfter,
-		pollerCycles:      pollerCycles,
-		pollerErrors:      pollerErrors,
-		pollerLatencyMs:   pollerLatency,
-	}, nil
+		requests:          b.counter("http_requests_total"),
+		requestLatencyMs:  b.histogram("http_request_duration_ms"),
+		providerAttempts:  b.counter("provider_attempts_total"),
+		providerErrors:    b.counter("provider_errors_total"),
+		providerLatencyMs: b.histogram("provider_duration_ms"),
+		rateLimitHits:     b.counter("provider_rate_limit_hits_total"),
+		retryAfterMs:      b.histogram("provider_retry_after_ms"),
+		pollerCycles:      b.counter("poller_cycles_total"),
+		pollerErrors:      b.counter("poller_errors_total"),
+		pollerLatencyMs:   b.histogram("poller_cycle_duration_ms"),
+	}
+	if b.err != nil {
+		return nil, b.err
+	}
+	return inst, nil
 }
 
 func (o *otelInstruments) recordHTTPRequest(method, path string, status int, duration time.Duration) {

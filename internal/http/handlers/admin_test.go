@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,15 +11,22 @@ import (
 
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
 	"github.com/preston-bernstein/nba-data-service/internal/snapshots"
+	"github.com/preston-bernstein/nba-data-service/internal/testkit"
 	"github.com/preston-bernstein/nba-data-service/internal/teststubs"
-	"github.com/preston-bernstein/nba-data-service/internal/testutil"
 )
 
-func callRefresh(t *testing.T, h *AdminHandler, method, path, token string) *httptest.ResponseRecorder {
+// refreshCall describes one request to the refresh endpoint. An empty token sends no Authorization header.
+type refreshCall struct {
+	method string
+	path   string
+	token  string
+}
+
+func callRefresh(t *testing.T, h *AdminHandler, call refreshCall) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, nil)
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	req := httptest.NewRequestWithContext(context.Background(), call.method, call.path, nil)
+	if call.token != "" {
+		req.Header.Set("Authorization", "Bearer "+call.token)
 	}
 	rr := httptest.NewRecorder()
 	h.RefreshSnapshots(rr, req)
@@ -27,7 +35,7 @@ func callRefresh(t *testing.T, h *AdminHandler, method, path, token string) *htt
 
 func TestAdminRefreshRequiresAuth(t *testing.T) {
 	h := NewAdminHandler(nil, nil, "secret", nil)
-	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh", "")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodPost, path: "/admin/snapshots/refresh", token: ""})
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rr.Code)
 	}
@@ -40,7 +48,7 @@ func TestAdminRefreshWritesSnapshot(t *testing.T) {
 	}
 	h := NewAdminHandler(writer, provider, "secret", nil)
 
-	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?date=2024-01-01", "secret")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodPost, path: "/admin/snapshots/refresh?date=2024-01-01", token: "secret"})
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
@@ -49,7 +57,7 @@ func TestAdminRefreshWritesSnapshot(t *testing.T) {
 
 func TestAdminRefreshRejectsWrongMethod(t *testing.T) {
 	h := NewAdminHandler(nil, nil, "secret", nil)
-	rr := callRefresh(t, h, http.MethodGet, "/admin/snapshots/refresh", "secret")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodGet, path: "/admin/snapshots/refresh", token: "secret"})
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", rr.Code)
 	}
@@ -62,7 +70,7 @@ func TestAdminRefreshRejectsInvalidDate(t *testing.T) {
 	}
 	h := NewAdminHandler(writer, provider, "secret", nil)
 
-	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?date=bad-date", "secret")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodPost, path: "/admin/snapshots/refresh?date=bad-date", token: "secret"})
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rr.Code)
 	}
@@ -71,7 +79,7 @@ func TestAdminRefreshRejectsInvalidDate(t *testing.T) {
 func TestAdminRefreshValidatesTimezone(t *testing.T) {
 	h := NewAdminHandler(snapshots.NewWriter(t.TempDir(), 1), &teststubs.StubProvider{Games: []domaingames.Game{{ID: "g1"}}}, "secret", nil)
 
-	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?tz=bad/tz", "secret")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodPost, path: "/admin/snapshots/refresh?tz=bad/tz", token: "secret"})
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for bad tz, got %d", rr.Code)
 	}
@@ -80,7 +88,7 @@ func TestAdminRefreshValidatesTimezone(t *testing.T) {
 func TestAdminRefreshNoGames(t *testing.T) {
 	h := NewAdminHandler(snapshots.NewWriter(t.TempDir(), 1), &teststubs.StubProvider{Games: []domaingames.Game{}}, "secret", nil)
 
-	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?date=2024-01-01", "secret")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodPost, path: "/admin/snapshots/refresh?date=2024-01-01", token: "secret"})
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for no games, got %d", rr.Code)
 	}
@@ -89,13 +97,13 @@ func TestAdminRefreshNoGames(t *testing.T) {
 func TestAdminRefreshHandlesWriterError(t *testing.T) {
 	// Base path is a file; writer will fail.
 	tmpFile := filepath.Join(t.TempDir(), "notadir")
-	if err := os.WriteFile(tmpFile, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte("x"), 0o600); err != nil {
 		t.Fatalf("failed to create placeholder file: %v", err)
 	}
 	writer := snapshots.NewWriter(tmpFile, 1)
 	h := NewAdminHandler(writer, &teststubs.StubProvider{Games: []domaingames.Game{{ID: "g1"}}}, "secret", nil)
 
-	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?date=2024-01-01", "secret")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodPost, path: "/admin/snapshots/refresh?date=2024-01-01", token: "secret"})
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 on write failure, got %d", rr.Code)
 	}
@@ -103,7 +111,7 @@ func TestAdminRefreshHandlesWriterError(t *testing.T) {
 
 func TestAdminRefreshRequiresConfiguredWriterAndProvider(t *testing.T) {
 	h := NewAdminHandler(nil, nil, "secret", nil)
-	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?date=2024-01-01", "secret")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodPost, path: "/admin/snapshots/refresh?date=2024-01-01", token: "secret"})
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 when writer/provider missing, got %d", rr.Code)
 	}
@@ -111,7 +119,7 @@ func TestAdminRefreshRequiresConfiguredWriterAndProvider(t *testing.T) {
 
 func TestAdminRefreshMethodNotAllowed(t *testing.T) {
 	h := NewAdminHandler(nil, nil, "secret", nil)
-	rr := callRefresh(t, h, http.MethodGet, "/admin/snapshots/refresh", "")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodGet, path: "/admin/snapshots/refresh", token: ""})
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", rr.Code)
 	}
@@ -120,10 +128,10 @@ func TestAdminRefreshMethodNotAllowed(t *testing.T) {
 func TestAdminRefreshProviderError(t *testing.T) {
 	writer := snapshots.NewWriter(t.TempDir(), 1)
 	provider := &teststubs.StubProvider{Err: errors.New("boom")}
-	logger, buf := testutil.NewBufferLogger()
+	logger, buf := testkit.NewBufferLogger()
 	h := NewAdminHandler(writer, provider, "secret", logger)
 
-	rr := callRefresh(t, h, http.MethodPost, "/admin/snapshots/refresh?date=2024-01-01", "secret")
+	rr := callRefresh(t, h, refreshCall{method: http.MethodPost, path: "/admin/snapshots/refresh?date=2024-01-01", token: "secret"})
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502 on provider error, got %d", rr.Code)
 	}
@@ -133,9 +141,9 @@ func TestAdminRefreshProviderError(t *testing.T) {
 }
 
 func TestAdminRefreshUnauthorizedLogsClientIP(t *testing.T) {
-	logger, buf := testutil.NewBufferLogger()
+	logger, buf := testkit.NewBufferLogger()
 	h := NewAdminHandler(nil, nil, "secret", logger)
-	req := httptest.NewRequest(http.MethodPost, "/admin/snapshots/refresh", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/snapshots/refresh", nil)
 	req.Header.Set("X-Forwarded-For", "192.0.2.1, 192.0.2.2")
 	rr := httptest.NewRecorder()
 
@@ -151,13 +159,13 @@ func TestAdminRefreshUnauthorizedLogsClientIP(t *testing.T) {
 
 func TestAuthorizeHandlesEmptyToken(t *testing.T) {
 	h := NewAdminHandler(nil, nil, "", nil)
-	if h.authorize(httptest.NewRequest(http.MethodGet, "/", nil)) {
+	if h.authorize(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)) {
 		t.Fatalf("expected empty token to be unauthorized")
 	}
 }
 
 func TestClientIPFromForwardedHeader(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
 	if got := clientIP(req); got != "1.2.3.4" {
 		t.Fatalf("expected first forwarded address, got %s", got)
@@ -165,7 +173,7 @@ func TestClientIPFromForwardedHeader(t *testing.T) {
 }
 
 func TestClientIPFallsBackToRemoteAddr(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "9.9.9.9:1234"
 	if got := clientIP(req); got != "9.9.9.9:1234" {
 		t.Fatalf("expected remote addr fallback, got %s", got)

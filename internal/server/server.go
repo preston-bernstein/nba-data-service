@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/preston-bernstein/nba-data-service/internal/config"
 	"github.com/preston-bernstein/nba-data-service/internal/events"
+	"github.com/preston-bernstein/nba-data-service/internal/gamedate"
 	httpserver "github.com/preston-bernstein/nba-data-service/internal/http"
 	"github.com/preston-bernstein/nba-data-service/internal/http/handlers"
 	"github.com/preston-bernstein/nba-data-service/internal/http/middleware"
@@ -15,7 +17,6 @@ import (
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/poller"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
-	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
 )
 
 var metricsSetup = metrics.Setup
@@ -48,14 +49,26 @@ func newServerWithMetrics(cfg config.Config, logger *slog.Logger, provider provi
 	if provider == nil {
 		provider = newProviderFactory(logger, recorder).build(cfg)
 	} else {
-		provider = providers.NewRetryingProvider(provider, logger, recorder, normalizeProviderName(cfg.Provider, provider), 0, 0)
+		provider = providers.NewRetryingProvider(provider, providers.RetryConfig{Logger: logger, Metrics: recorder, Name: normalizeProviderName(cfg.Provider, provider)})
 	}
-	loc := timeutil.ResolveLocation(cfg.Balldontlie.Timezone)
+	loc := gamedate.ResolveLocation(cfg.Balldontlie.Timezone)
 	snaps := buildSnapshots(cfg, provider, logger, loc)
-	plr := poller.New(provider, snaps.writer, logger, recorder, cfg.PollInterval, loc)
+	plr := poller.New(provider, snaps.writer, poller.Options{Logger: logger, Metrics: recorder, Interval: cfg.PollInterval, Location: loc})
 	pub := buildPublisher(cfg, logger)
 	plr.SetPublisher(pub)
-	httpSrv := buildHTTPServer(cfg, logger, provider, recorder, plr, snaps, loc)
+	var statusFn func() poller.Status
+	if plr != nil {
+		statusFn = plr.Status
+	}
+	router := buildRouter(routerDeps{
+		snaps:      snaps,
+		logger:     logger,
+		status:     statusFn,
+		provider:   provider,
+		loc:        loc,
+		adminToken: cfg.Snapshots.AdminToken,
+	})
+	httpSrv := buildHTTPServer(cfg, logger, recorder, router)
 
 	return &Server{
 		cfg:           cfg,
@@ -79,21 +92,30 @@ func newServerWithDeps(cfg config.Config, logger *slog.Logger, httpSrv httpServe
 	}
 }
 
-func buildHTTPServer(cfg config.Config, logger *slog.Logger, provider providers.GameProvider, recorder *metrics.Recorder, plr Poller, snaps snapshotComponents, loc *time.Location) httpServer {
-	var statusFn func() poller.Status
-	if plr != nil {
-		statusFn = plr.Status
-	}
+// routerDeps holds what the HTTP routes need.
+type routerDeps struct {
+	snaps      snapshotComponents
+	logger     *slog.Logger
+	status     func() poller.Status
+	provider   providers.GameProvider
+	loc        *time.Location
+	adminToken string
+}
 
-	handler := handlers.NewHandler(snaps.store, logger, statusFn, loc)
-	admin := handlers.NewAdminHandler(snaps.writer, provider, cfg.Snapshots.AdminToken, logger)
+func buildRouter(deps routerDeps) http.Handler {
+	handler := handlers.NewHandler(deps.snaps.store, deps.logger, deps.status, deps.loc)
+	admin := handlers.NewAdminHandler(deps.snaps.writer, deps.provider, deps.adminToken, deps.logger)
 	router := httpserver.NewRouter(handler)
 	// Optionally mount admin refresh endpoint if token is set.
-	if admin != nil && cfg.Snapshots.AdminToken != "" {
+	if admin != nil && deps.adminToken != "" {
 		if mux, ok := router.(*http.ServeMux); ok {
 			mux.HandleFunc("/admin/snapshots/refresh", admin.RefreshSnapshots)
 		}
 	}
+	return router
+}
+
+func buildHTTPServer(cfg config.Config, logger *slog.Logger, recorder *metrics.Recorder, router http.Handler) httpServer {
 	if logger == nil {
 		logger = logging.NewLogger(logging.Config{})
 	}
@@ -121,12 +143,13 @@ func (s *Server) Run(ctx context.Context, stop context.CancelFunc) {
 		s.logger.Info("shutdown signal received")
 	}
 
-	s.gracefulShutdown()
+	// The context is already cancelled here, so shutdown runs on a copy that keeps its values but not its cancellation.
+	s.gracefulShutdown(context.WithoutCancel(ctx))
 }
 
 func (s *Server) startServer(stop context.CancelFunc) {
 	if s.logger != nil {
-		s.logger.Info("http server starting", slog.String("addr", s.httpServer.Addr()))
+		s.logger.Info("http server starting", "addr", s.httpServer.Addr())
 	}
 	launchServer("http", s.httpServer, s.logger, func(err error) {
 		if stop != nil {
@@ -140,39 +163,30 @@ func (s *Server) startMetrics() {
 		return
 	}
 	if s.logger != nil {
-		s.logger.Info("metrics server starting", slog.String("addr", s.metricsServer.Addr()))
+		s.logger.Info("metrics server starting", "addr", s.metricsServer.Addr())
 	}
 	launchServer("metrics", s.metricsServer, s.logger, nil)
 }
 
-func (s *Server) gracefulShutdown() {
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+func (s *Server) gracefulShutdown(ctx context.Context) {
+	shutdownCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
 
 	if s.metricsStop != nil {
-		if err := s.metricsStop(shutdownCtx); err != nil && s.logger != nil {
-			s.logger.Warn("metrics shutdown failed", "error", err)
-		}
+		s.logWarn("metrics shutdown failed", s.metricsStop(shutdownCtx))
 	}
-
 	if s.metricsServer != nil {
-		if err := s.metricsServer.Shutdown(shutdownCtx); err != nil && s.logger != nil {
-			s.logger.Warn("metrics server shutdown failed", "error", err)
-		}
+		s.logWarn("metrics server shutdown failed", s.metricsServer.Shutdown(shutdownCtx))
 	}
 
-	if err := s.poller.Stop(shutdownCtx); err != nil && s.logger != nil {
-		s.logger.Error("failed to stop poller", "error", err)
-	}
+	s.logError("failed to stop poller", s.poller.Stop(shutdownCtx))
 
 	// Close after the poller stops, so no publish is in flight. Close flushes buffered records.
 	if s.publisher != nil {
 		s.publisher.Close()
 	}
 
-	if err := s.httpServer.Shutdown(shutdownCtx); err != nil && s.logger != nil {
-		s.logger.Error("graceful shutdown failed", "error", err)
-	}
+	s.logError("graceful shutdown failed", s.httpServer.Shutdown(shutdownCtx))
 
 	// Stop rate-limited providers to avoid ticker leaks when present.
 	if rl, ok := s.pollerProvider().(interface{ Close() }); ok {
@@ -181,6 +195,18 @@ func (s *Server) gracefulShutdown() {
 
 	if s.logger != nil {
 		s.logger.Info("shutdown complete")
+	}
+}
+
+func (s *Server) logWarn(msg string, err error) {
+	if err != nil && s.logger != nil {
+		s.logger.Warn(msg, "error", err)
+	}
+}
+
+func (s *Server) logError(msg string, err error) {
+	if err != nil && s.logger != nil {
+		s.logger.Error(msg, "error", err)
 	}
 }
 
@@ -219,7 +245,7 @@ func buildMetrics(cfg config.Config, logger *slog.Logger, recorder *metrics.Reco
 	var metricsSrv httpServer
 	if handler != nil && recCfg.Enabled {
 		metricsSrv = netHTTPServer{
-			srv: &http.Server{
+			srv: &http.Server{ //nolint:gosec // metrics server has no timeouts today; adding one changes how slow clients are served
 				Addr:    ":" + recCfg.Port,
 				Handler: handler,
 			},
@@ -232,9 +258,9 @@ func buildMetrics(cfg config.Config, logger *slog.Logger, recorder *metrics.Reco
 func launchServer(name string, srv httpServer, logger *slog.Logger, onError func(error)) {
 	go func() {
 		if logger != nil {
-			logger.Info("starting "+name+" server", slog.String("addr", srv.Addr()))
+			logger.Info("starting "+name+" server", "addr", srv.Addr())
 		}
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			if logger != nil {
 				logger.Warn(name+" server failed", "error", err)
 			}

@@ -27,8 +27,8 @@ func NewLogger(cfg Config) *slog.Logger {
 	handler := buildHandler(cfg.Format, level)
 
 	return slog.New(handler).With(
-		slog.String("service", cfg.Service),
-		slog.String("version", cfg.Version),
+		"service", cfg.Service,
+		"version", cfg.Version,
 	)
 }
 

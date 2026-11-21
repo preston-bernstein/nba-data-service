@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/preston-bernstein/nba-data-service/internal/http/requestutil"
+	"github.com/preston-bernstein/nba-data-service/internal/http/requestmeta"
 	"github.com/preston-bernstein/nba-data-service/internal/logging"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 )
@@ -20,17 +20,17 @@ func LoggingMiddleware(baseLogger *slog.Logger, recorder *metrics.Recorder, next
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		reqID := requestutil.SanitizeRequestID(r.Header.Get("X-Request-ID"))
+		reqID := requestmeta.SanitizeRequestID(r.Header.Get("X-Request-ID"))
 		w.Header().Set("X-Request-ID", reqID)
 
-		clientIP := requestutil.ClientIP(r)
+		clientIP := requestmeta.ClientIP(r)
 
 		logger := baseLogger.With(
-			slog.String("request_id", reqID),
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.String("query", r.URL.RawQuery),
-			slog.String("client_ip", clientIP),
+			"request_id", reqID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"query", r.URL.RawQuery,
+			"client_ip", clientIP,
 		)
 
 		ctx := logging.WithLogger(r.Context(), logger)
@@ -46,8 +46,8 @@ func LoggingMiddleware(baseLogger *slog.Logger, recorder *metrics.Recorder, next
 		}
 
 		logger.Info("request complete",
-			slog.Int(logging.FieldStatusCode, ww.status),
-			slog.Int64(logging.FieldDurationMS, duration.Milliseconds()),
+			logging.FieldStatusCode, ww.status,
+			logging.FieldDurationMS, duration.Milliseconds(),
 		)
 	})
 }

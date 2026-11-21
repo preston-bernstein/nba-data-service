@@ -35,20 +35,24 @@ func NewRateLimitedProvider(next GameProvider, interval time.Duration, logger *s
 
 func (p *rateLimitedProvider) FetchGames(ctx context.Context, date string, tz string) ([]games.Game, error) {
 	if p == nil || p.next == nil {
-		logWithProvider(ctx, p.logger, slog.LevelWarn, p.name, "provider unavailable")
+		p.log(ctx, slog.LevelWarn, "provider unavailable")
 		return nil, ErrProviderUnavailable
 	}
 	select {
 	case <-ctx.Done():
-		logWithProvider(ctx, p.logger, slog.LevelWarn, p.name, "rate-limited fetch canceled")
-		return nil, ctx.Err()
+		p.log(ctx, slog.LevelWarn, "rate-limited fetch canceled")
+		return nil, ctx.Err() //nolint:wrapcheck // context error is returned as is; wrapping changes its message and identity
 	case <-p.ticker.C:
 	}
-	logWithProvider(ctx, p.logger, slog.LevelInfo, p.name, "rate-limited provider fetch",
+	p.log(ctx, slog.LevelInfo, "rate-limited provider fetch",
 		slog.String("date", date),
 		slog.String("tz", tz),
 	)
-	return p.next.FetchGames(ctx, date, tz)
+	return p.next.FetchGames(ctx, date, tz) //nolint:wrapcheck // error text is logged and shown to callers as is; wrapping changes it
+}
+
+func (p *rateLimitedProvider) log(ctx context.Context, level slog.Level, msg string, args ...any) {
+	providerLogger{logger: p.logger, provider: p.name}.log(ctx, level, msg, args...)
 }
 
 // Close stops the internal ticker; callers should invoke when discarding the provider to avoid leaks.

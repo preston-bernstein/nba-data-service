@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -15,21 +15,23 @@ import (
 
 	"github.com/preston-bernstein/nba-data-service/internal/config"
 	domaingames "github.com/preston-bernstein/nba-data-service/internal/domain/games"
+	"github.com/preston-bernstein/nba-data-service/internal/gamedate"
 	"github.com/preston-bernstein/nba-data-service/internal/metrics"
 	"github.com/preston-bernstein/nba-data-service/internal/poller"
 	"github.com/preston-bernstein/nba-data-service/internal/providers"
 	"github.com/preston-bernstein/nba-data-service/internal/providers/balldontlie"
-	"github.com/preston-bernstein/nba-data-service/internal/testutil"
-	"github.com/preston-bernstein/nba-data-service/internal/timeutil"
+	"github.com/preston-bernstein/nba-data-service/internal/testkit"
 )
 
-func TestServerServesHealthAndGames(t *testing.T) {
+// startPollingServer builds a server on a stub provider and returns it once the poller has fetched.
+func startPollingServer(t *testing.T) *Server {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	game := testutil.SampleGame("stub-1")
+	game := testkit.SampleGame("stub-1")
 	game.StartTime = time.Now().UTC().Format(time.RFC3339)
 
-	provider := &testutil.NotifyingProvider{
+	provider := &testkit.NotifyingProvider{
 		Games:  []domaingames.Game{game},
 		Notify: make(chan struct{}),
 	}
@@ -60,18 +62,22 @@ func TestServerServesHealthAndGames(t *testing.T) {
 
 	// Wait a brief moment for the snapshot to be written.
 	time.Sleep(20 * time.Millisecond)
+	return srv
+}
 
+func TestServerServesHealthAndGames(t *testing.T) {
+	srv := startPollingServer(t)
 	router := srv.Handler()
 
-	healthRec := testutil.Serve(router, http.MethodGet, "/health", nil)
-	testutil.AssertStatus(t, healthRec, http.StatusOK)
+	healthRec := testkit.Serve(router, http.MethodGet, "/health", nil)
+	testkit.AssertStatus(t, healthRec, http.StatusOK)
 
-	today := timeutil.FormatDate(time.Now().UTC())
-	gameRec := testutil.Serve(router, http.MethodGet, "/games?date="+today, nil)
-	testutil.AssertStatus(t, gameRec, http.StatusOK)
+	today := gamedate.FormatDate(time.Now().UTC())
+	gameRec := testkit.Serve(router, http.MethodGet, "/games?date="+today, nil)
+	testkit.AssertStatus(t, gameRec, http.StatusOK)
 
 	var got domaingames.TodayResponse
-	testutil.DecodeJSON(t, gameRec, &got)
+	testkit.DecodeJSON(t, gameRec, &got)
 
 	if len(got.Games) != 1 || got.Games[0].ID != "stub-1" {
 		t.Fatalf("unexpected games %+v", got)
@@ -149,7 +155,7 @@ func TestNormalizeProviderName(t *testing.T) {
 }
 
 func TestLaunchServerInvokesOnError(t *testing.T) {
-	stub := &testutil.ErrHTTPServer{}
+	stub := &testkit.ErrHTTPServer{}
 	called := make(chan error, 1)
 	launchServer("http", stub, nil, func(err error) {
 		called <- err
@@ -165,7 +171,7 @@ func TestLaunchServerInvokesOnError(t *testing.T) {
 }
 
 func TestLaunchServerHandlesUnexpectedError(t *testing.T) {
-	stub := &testutil.StubHTTPServer{ListenErr: errors.New("unexpected")}
+	stub := &testkit.StubHTTPServer{ListenErr: errors.New("unexpected")}
 	called := make(chan error, 1)
 	launchServer("http", stub, nil, func(err error) {
 		called <- err
@@ -181,7 +187,7 @@ func TestLaunchServerHandlesUnexpectedError(t *testing.T) {
 }
 
 func TestLaunchServerSuccessDoesNotCallOnError(t *testing.T) {
-	stub := &testutil.StubHTTPServer{}
+	stub := &testkit.StubHTTPServer{}
 	called := make(chan error, 1)
 	launchServer("http", stub, nil, func(err error) {
 		called <- err
@@ -195,13 +201,14 @@ func TestLaunchServerSuccessDoesNotCallOnError(t *testing.T) {
 }
 
 func TestLaunchServerLogsStartAndWarnsOnError(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
-	stub := &testutil.StubHTTPServer{AddrVal: ":1", ListenErr: errors.New("fail")}
+	stub := &testkit.StubHTTPServer{AddrVal: ":1", ListenErr: errors.New("fail")}
 	called := make(chan error, 1)
 	launchServer("http", stub, logger, func(err error) { called <- err })
 	select {
-	case <-called:
+	case err := <-called:
+		_ = err
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("expected onError to be called")
 	}
@@ -212,9 +219,9 @@ func TestLaunchServerLogsStartAndWarnsOnError(t *testing.T) {
 }
 
 func TestLaunchServerIgnoresErrServerClosed(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
-	stub := &testutil.CloseableHTTPServer{}
+	stub := &testkit.CloseableHTTPServer{}
 	called := make(chan struct{}, 1)
 	launchServer("http", stub, logger, func(err error) { called <- struct{}{} })
 	time.Sleep(20 * time.Millisecond)
@@ -234,20 +241,20 @@ func TestStartMetricsSkipsWhenNil(t *testing.T) {
 }
 
 func TestStartMetricsUsesServer(t *testing.T) {
-	stub := &testutil.StubHTTPServer{AddrVal: "addr", ListenErr: http.ErrServerClosed}
+	stub := &testkit.StubHTTPServer{AddrVal: "addr", ListenErr: http.ErrServerClosed}
 	s := &Server{
 		metricsServer: stub,
 	}
 	s.startMetrics()
 	time.Sleep(10 * time.Millisecond)
-	if stub.ListenCalls == 0 {
+	if stub.ListenCount() == 0 {
 		t.Fatalf("expected metrics server to start")
 	}
 }
 
 func TestStartMetricsLogsWhenLoggerPresent(t *testing.T) {
-	stub := &testutil.StubHTTPServer{AddrVal: "addr", ListenErr: http.ErrServerClosed}
-	var buf bytes.Buffer
+	stub := &testkit.StubHTTPServer{AddrVal: "addr", ListenErr: http.ErrServerClosed}
+	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	s := &Server{
 		logger:        logger,
@@ -261,9 +268,9 @@ func TestStartMetricsLogsWhenLoggerPresent(t *testing.T) {
 }
 
 func TestGracefulShutdownStopsAll(t *testing.T) {
-	stubSrv := &testutil.StubHTTPServer{}
-	stubMetrics := &testutil.StubHTTPServer{}
-	stubPoller := &testutil.StubPoller{}
+	stubSrv := &testkit.StubHTTPServer{}
+	stubMetrics := &testkit.StubHTTPServer{}
+	stubPoller := &testkit.StubPoller{}
 	metricsStopped := 0
 
 	s := &Server{
@@ -277,7 +284,7 @@ func TestGracefulShutdownStopsAll(t *testing.T) {
 		},
 	}
 
-	s.gracefulShutdown()
+	s.gracefulShutdown(context.Background())
 
 	if metricsStopped != 1 {
 		t.Fatalf("expected metricsStop called, got %d", metricsStopped)
@@ -294,10 +301,10 @@ func TestGracefulShutdownStopsAll(t *testing.T) {
 }
 
 func TestGracefulShutdownLogsErrors(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	stubSrv := &testutil.StubHTTPServer{ShutdownErr: errors.New("srv err")}
-	stubMetrics := &testutil.StubHTTPServer{ShutdownErr: errors.New("metrics err")}
-	stubPoller := &testutil.StubPoller{Err: errors.New("poller err")}
+	logger := slog.New(slog.DiscardHandler)
+	stubSrv := &testkit.StubHTTPServer{ShutdownErr: errors.New("srv err")}
+	stubMetrics := &testkit.StubHTTPServer{ShutdownErr: errors.New("metrics err")}
+	stubPoller := &testkit.StubPoller{Err: errors.New("poller err")}
 
 	s := &Server{
 		logger:        logger,
@@ -310,7 +317,7 @@ func TestGracefulShutdownLogsErrors(t *testing.T) {
 		},
 	}
 
-	s.gracefulShutdown()
+	s.gracefulShutdown(context.Background())
 }
 
 func TestServerHandlesProviderErrorGracefully(t *testing.T) {
@@ -318,23 +325,23 @@ func TestServerHandlesProviderErrorGracefully(t *testing.T) {
 	defer cancel()
 
 	cfg := config.Config{PollInterval: 5 * time.Millisecond}
-	srv := newServerWithProvider(cfg, nil, &testutil.ErrProvider{Err: context.DeadlineExceeded})
+	srv := newServerWithProvider(cfg, nil, &testkit.ErrProvider{Err: context.DeadlineExceeded})
 	srv.poller.Start(ctx)
 
 	// Give the poller a moment to attempt a fetch.
 	time.Sleep(20 * time.Millisecond)
 
 	router := srv.Handler()
-	gameRec := testutil.Serve(router, http.MethodGet, "/games/unknown", nil)
-	testutil.AssertStatus(t, gameRec, http.StatusNotFound)
+	gameRec := testkit.Serve(router, http.MethodGet, "/games/unknown", nil)
+	testkit.AssertStatus(t, gameRec, http.StatusNotFound)
 }
 
 func TestGracefulShutdownCallsStopAndShutdown(t *testing.T) {
-	p := &testutil.StubPoller{}
-	httpSrv := &testutil.StubHTTPServer{}
+	p := &testkit.StubPoller{}
+	httpSrv := &testkit.StubHTTPServer{}
 
 	srv := newServerWithDeps(config.Config{}, nil, httpSrv, p)
-	srv.gracefulShutdown()
+	srv.gracefulShutdown(context.Background())
 
 	if p.StopCalls != 1 {
 		t.Fatalf("expected poller Stop to be called once, got %d", p.StopCalls)
@@ -345,9 +352,9 @@ func TestGracefulShutdownCallsStopAndShutdown(t *testing.T) {
 }
 
 func TestGracefulShutdownTimesOutLongRunningShutdown(t *testing.T) {
-	p := &testutil.StubPoller{}
+	p := &testkit.StubPoller{}
 
-	blocking := &testutil.BlockingHTTPServer{
+	blocking := &testkit.BlockingHTTPServer{
 		AddrVal:    ":0",
 		HandlerVal: http.NewServeMux(),
 		Unblock:    make(chan struct{}),
@@ -360,7 +367,7 @@ func TestGracefulShutdownTimesOutLongRunningShutdown(t *testing.T) {
 	srv := newServerWithDeps(config.Config{}, nil, blocking, p)
 
 	start := time.Now()
-	srv.gracefulShutdown()
+	srv.gracefulShutdown(context.Background())
 	elapsed := time.Since(start)
 
 	if blocking.ShutdownCalls != 1 {
@@ -375,11 +382,11 @@ func TestGracefulShutdownTimesOutLongRunningShutdown(t *testing.T) {
 }
 
 func TestGracefulShutdownContinuesWhenPollerStopErrors(t *testing.T) {
-	p := &testutil.StubPoller{Err: errors.New("stop failure")}
-	httpSrv := &testutil.StubHTTPServer{}
+	p := &testkit.StubPoller{Err: errors.New("stop failure")}
+	httpSrv := &testkit.StubHTTPServer{}
 
 	srv := newServerWithDeps(config.Config{}, nil, httpSrv, p)
-	srv.gracefulShutdown()
+	srv.gracefulShutdown(context.Background())
 
 	if p.StopCalls != 1 {
 		t.Fatalf("expected poller Stop to be called once, got %d", p.StopCalls)
@@ -412,13 +419,13 @@ func (p *providerPoller) Provider() providers.GameProvider {
 }
 
 func TestGracefulShutdownClosesRateLimitedProvider(t *testing.T) {
-	httpSrv := &testutil.StubHTTPServer{}
+	httpSrv := &testkit.StubHTTPServer{}
 	prov := &closableProvider{}
 	pp := &providerPoller{provider: prov}
 
 	srv := newServerWithDeps(config.Config{}, nil, httpSrv, pp)
 
-	srv.gracefulShutdown()
+	srv.gracefulShutdown(context.Background())
 
 	if !prov.closed {
 		t.Fatalf("expected provider Close to be called")
@@ -429,8 +436,8 @@ func TestGracefulShutdownClosesRateLimitedProvider(t *testing.T) {
 }
 
 func TestPollerProviderReturnsNilWhenUnavailable(t *testing.T) {
-	plr := &testutil.StubPoller{}
-	httpSrv := &testutil.StubHTTPServer{}
+	plr := &testkit.StubPoller{}
+	httpSrv := &testkit.StubHTTPServer{}
 
 	srv := newServerWithDeps(config.Config{}, nil, httpSrv, plr)
 
@@ -449,7 +456,7 @@ func TestServerHandlerSetsRequestIDHeader(t *testing.T) {
 	}
 	srv := New(cfg, nil)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
 	srv.Handler().ServeHTTP(rr, req)
 	if got := rr.Header().Get("X-Request-ID"); got == "" {
 		t.Fatalf("expected X-Request-ID header set by middleware")
@@ -468,7 +475,7 @@ func TestAdminRouteMountedOnlyWithToken(t *testing.T) {
 	}
 	srv := New(cfg, nil)
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/admin/snapshots/refresh", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/snapshots/refresh", nil)
 	srv.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected admin route mounted with 401 without token, got %d", rr.Code)
@@ -493,7 +500,7 @@ func TestBuildMetricsUsesFallbackOnSetupError(t *testing.T) {
 		return nil, nil, nil, errors.New("boom")
 	}
 
-	rec, srv, stop := buildMetrics(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	rec, srv, stop := buildMetrics(cfg, slog.New(slog.DiscardHandler), nil)
 	if rec == nil {
 		t.Fatalf("expected recorder even on setup error")
 	}
@@ -532,7 +539,7 @@ func TestNewServerWithMetricsHandlesSetupFailure(t *testing.T) {
 		Provider: "fixture",
 	}
 
-	srv := newServerWithMetrics(cfg, nil, providers.NewRetryingProvider(nil, nil, nil, "", 0, 0), nil)
+	srv := newServerWithMetrics(cfg, nil, providers.NewRetryingProvider(nil, providers.RetryConfig{}), nil)
 	if srv.metrics == nil {
 		t.Fatalf("expected fallback metrics recorder even on setup failure")
 	}
@@ -544,20 +551,20 @@ func TestNewServerWithMetricsDisabledSkipsSetup(t *testing.T) {
 		Provider: "fixture",
 	}
 
-	srv := newServerWithMetrics(cfg, nil, providers.NewRetryingProvider(nil, nil, nil, "", 0, 0), nil)
+	srv := newServerWithMetrics(cfg, nil, providers.NewRetryingProvider(nil, providers.RetryConfig{}), nil)
 	if srv.metrics == nil {
 		t.Fatalf("expected recorder to be set even when metrics disabled")
 	}
 }
 
 func TestNewServerWithMetricsUsesInjectedRecorder(t *testing.T) {
-	rec, shutdown := testutil.NewRecorderWithShutdown()
+	rec, shutdown := testkit.NewRecorderWithShutdown()
 	cfg := config.Config{
 		Metrics:  config.MetricsConfig{Enabled: true},
 		Provider: "fixture",
 	}
 
-	srv := newServerWithMetrics(cfg, nil, providers.NewRetryingProvider(nil, nil, nil, "", 0, 0), rec)
+	srv := newServerWithMetrics(cfg, nil, providers.NewRetryingProvider(nil, providers.RetryConfig{}), rec)
 	if srv.metrics != rec {
 		t.Fatalf("expected injected recorder to be used")
 	}
@@ -570,8 +577,8 @@ func TestNewServerWithMetricsUsesInjectedRecorder(t *testing.T) {
 }
 
 func TestServerStartHandlesListenErrorAndStops(t *testing.T) {
-	plr := &testutil.StubPoller{}
-	httpSrv := &testutil.ErrHTTPServer{}
+	plr := &testkit.StubPoller{}
+	httpSrv := &testkit.ErrHTTPServer{}
 
 	srv := newServerWithDeps(config.Config{}, nil, httpSrv, plr)
 
@@ -595,9 +602,9 @@ func TestServerStartHandlesListenErrorAndStops(t *testing.T) {
 }
 
 func TestStartServerLogsAndStopsOnError(t *testing.T) {
-	plr := &testutil.StubPoller{}
-	httpSrv := &testutil.StubHTTPServer{ListenErr: errors.New("boom"), AddrVal: ":0"}
-	var buf bytes.Buffer
+	plr := &testkit.StubPoller{}
+	httpSrv := &testkit.StubHTTPServer{ListenErr: errors.New("boom"), AddrVal: ":0"}
+	var buf syncBuffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	srv := newServerWithDeps(config.Config{}, logger, httpSrv, plr)
@@ -618,8 +625,8 @@ func TestRunCancelsAndStopsComponents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	plr := &testutil.StubPoller{}
-	httpSrv := &testutil.CloseableHTTPServer{}
+	plr := &testkit.StubPoller{}
+	httpSrv := &testkit.CloseableHTTPServer{}
 
 	srv := newServerWithDeps(config.Config{}, nil, httpSrv, plr)
 
@@ -648,4 +655,26 @@ func TestRunCancelsAndStopsComponents(t *testing.T) {
 	if httpSrv.ShutdownCalls != 1 {
 		t.Fatalf("expected server Shutdown called once, got %d", httpSrv.ShutdownCalls)
 	}
+}
+
+// syncBuffer is a bytes.Buffer safe for the logger goroutines these tests start while the test reads the output.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n, err := b.buf.Write(p)
+	if err != nil {
+		return n, fmt.Errorf("write log buffer: %w", err)
+	}
+	return n, nil
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

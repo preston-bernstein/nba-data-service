@@ -16,3 +16,13 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # Docker base images are pinned by digest. Dependabot moves the digest.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "build"
