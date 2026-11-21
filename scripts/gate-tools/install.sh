@@ -27,7 +27,10 @@ VALE_SHA256=c80d62f6bce87b81843ac5b512a26e63213927b957adba0a64fc594570da2000
 fetch() { # url sha256 -> prints the downloaded path
   local file="$GATE_HOME/dl/${1##*/}"
   curl -fsSL "$1" -o "$file"
-  echo "$2  $file" | sha256sum -c --quiet - || { echo "install: checksum mismatch for $1" >&2; exit 1; }
+  echo "$2  $file" | sha256sum -c --quiet - || {
+    echo "install: checksum mismatch for $1" >&2
+    exit 1
+  }
   echo "$file"
 }
 
@@ -42,23 +45,28 @@ install_node() {
   ln -sf "$GATE_HOME/node_modules/.bin/jscpd" "$BIN/jscpd"
 }
 install_actionlint() {
-  local f; f="$(fetch "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" "$ACTIONLINT_SHA256")"
+  local f
+  f="$(fetch "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" "$ACTIONLINT_SHA256")"
   tar -xzf "$f" -C "$BIN" actionlint
 }
 install_hadolint() {
-  local f; f="$(fetch "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64" "$HADOLINT_SHA256")"
+  local f
+  f="$(fetch "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64" "$HADOLINT_SHA256")"
   install -m 0755 "$f" "$BIN/hadolint"
 }
 install_trivy() {
-  local f; f="$(fetch "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" "$TRIVY_SHA256")"
+  local f
+  f="$(fetch "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" "$TRIVY_SHA256")"
   tar -xzf "$f" -C "$BIN" trivy
 }
 install_golangci-lint() {
-  local f; f="$(fetch "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_VERSION}/golangci-lint-${GOLANGCI_VERSION}-linux-amd64.tar.gz" "$GOLANGCI_SHA256")"
+  local f
+  f="$(fetch "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_VERSION}/golangci-lint-${GOLANGCI_VERSION}-linux-amd64.tar.gz" "$GOLANGCI_SHA256")"
   tar -xzf "$f" -C "$BIN" --strip-components=1 "golangci-lint-${GOLANGCI_VERSION}-linux-amd64/golangci-lint"
 }
 install_vale() {
-  local f; f="$(fetch "https://github.com/errata-ai/vale/releases/download/v${VALE_VERSION}/vale_${VALE_VERSION}_Linux_64-bit.tar.gz" "$VALE_SHA256")"
+  local f
+  f="$(fetch "https://github.com/errata-ai/vale/releases/download/v${VALE_VERSION}/vale_${VALE_VERSION}_Linux_64-bit.tar.gz" "$VALE_SHA256")"
   tar -xzf "$f" -C "$BIN" vale
 }
 
