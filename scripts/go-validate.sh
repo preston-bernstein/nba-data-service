@@ -10,7 +10,10 @@ set -euo pipefail
 ROOT="${1:-.}"
 cd "$ROOT"
 
-fail() { echo "go-validate: $*" >&2; exit "${2:-1}"; }
+fail() {
+  echo "go-validate: $*" >&2
+  exit "${2:-1}"
+}
 need() { command -v "$1" >/dev/null 2>&1 || fail "missing tool: $1 (the gate never skips a step)" 127; }
 
 if [ ! -f go.mod ]; then
