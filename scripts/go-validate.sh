@@ -6,6 +6,9 @@
 # Order: go mod verify (skipped when vendor/ exists) -> gofmt -l (must list nothing) -> go vet -> golangci-lint run -> go test -race.
 # Every tool is checked before any step runs. A missing tool fails the gate with exit 127. Nothing is skipped.
 set -euo pipefail
+# A git hook exports GIT_DIR, GIT_INDEX_FILE and the like. A test that runs git in a temp folder would inherit them
+# and write into this repo instead, so drop git's repo-local variables before any tool runs.
+while IFS= read -r v; do unset "$v"; done < <(git rev-parse --local-env-vars 2>/dev/null || true)
 
 ROOT="${1:-.}"
 cd "$ROOT"

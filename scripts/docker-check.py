@@ -24,6 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
+from typing import NamedTuple
 from pathlib import Path
 
 SKIP_DIRS = {"node_modules", "vendor", "__pycache__", "dist", "build", "venv", "fixtures", "testdata"}
@@ -88,124 +89,199 @@ def instructions(text: str):
         i += 1
 
 
+class _Instruction(NamedTuple):
+    n: int
+    kw: str
+    rest: str
+    allow: set[str]
+
+
+class _DockerfileState:
+    def __init__(self, rel: Path) -> None:
+        self.rel = rel
+        self.out: list[str] = []
+        self.stages: set[str] = set()
+        self.user: str | None = None
+        self.saw_from = False
+
+    def add(self, n: int, msg: str) -> None:
+        self.out.append(f"{self.rel}:{n}: {msg}")
+
+
+def _is_base_ref(st: _DockerfileState, image: str, toks: list[str]) -> bool:
+    earlier = st.stages - {toks[2].lower() if len(toks) >= 3 else ""}
+    return image.lower() == "scratch" or image.lower() in earlier or "$" in image
+
+
+def _check_from(st: _DockerfileState, ins: _Instruction) -> None:
+    st.saw_from = True
+    toks = [t for t in ins.rest.split() if not t.startswith("--")]
+    image = toks[0] if toks else ""
+    if len(toks) >= 3 and toks[1].upper() == "AS":
+        st.stages.add(toks[2].lower())
+    st.user = None
+    if _is_base_ref(st, image, toks):
+        return
+    problem = image_problem(image, "unpinned" in ins.allow)
+    if problem:
+        st.add(ins.n, problem)
+
+
+def _check_add(st: _DockerfileState, n: int, rest: str) -> None:
+    src = rest.split()[0] if rest.split() else ""
+    if not src.startswith(("http://", "https://")):
+        st.add(n, "ADD of a local path; use COPY (ADD also unpacks archives and fetches URLs)")
+
+
+def _check_env(st: _DockerfileState, n: int, kw: str, rest: str) -> None:
+    name = re.split(r"[=\s]", rest, maxsplit=1)[0]
+    if SECRET_NAME.search(name):
+        st.add(n, f"{kw} {name} looks like a secret and persists in the image history; use RUN --mount=type=secret")
+
+
+def _check_run(st: _DockerfileState, n: int, rest: str) -> None:
+    if re.search(r"apt-get\s+update", rest) and not re.search(r"apt-get\s+(-\S+\s+)*install", rest):
+        st.add(n, "apt-get update in its own RUN caches a stale index; run it in the same RUN as apt-get install")
+    if re.search(r"apt-get\s+(-\S+\s+)*install", rest) and "--no-install-recommends" not in rest:
+        st.add(n, "apt-get install without --no-install-recommends pulls in extra packages")
+    if re.search(r"\bapk\s+add\b", rest) and "--no-cache" not in rest:
+        st.add(n, "apk add without --no-cache keeps the package index in the layer")
+    if re.search(r"(curl|wget)\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b", rest):
+        st.add(n, "RUN pipes a download into a shell; download, verify a checksum, then run")
+
+
+def _check_instruction(st: _DockerfileState, ins: _Instruction) -> None:
+    n, kw, rest = ins.n, ins.kw, ins.rest
+    if kw == "FROM":
+        _check_from(st, ins)
+    elif kw == "USER":
+        st.user = rest.split()[0].split(":")[0] if rest.split() else None
+    elif kw == "ADD":
+        _check_add(st, n, rest)
+    elif kw in {"ENV", "ARG"}:
+        _check_env(st, n, kw, rest)
+    elif kw == "RUN":
+        _check_run(st, n, rest)
+
+
 def check_dockerfile(path: Path, root: Path) -> list[str]:
     rel = path.relative_to(root)
     text = path.read_text()
-    out: list[str] = []
     file_allow = set(re.findall(r"docker-allow:\s*([\w-]+)", text))
-    stages: set[str] = set()
-    user: str | None = None
-    saw_from = False
-
-    def add(n: int, msg: str) -> None:
-        out.append(f"{rel}:{n}: {msg}")
-
-    for n, kw, rest, allow in instructions(text):
-        if kw == "FROM":
-            saw_from = True
-            toks = [t for t in rest.split() if not t.startswith("--")]
-            image = toks[0] if toks else ""
-            if len(toks) >= 3 and toks[1].upper() == "AS":
-                stages.add(toks[2].lower())
-            user = None
-            if image.lower() == "scratch" or image.lower() in stages - {toks[2].lower() if len(toks) >= 3 else ""} or "$" in image:
-                continue
-            problem = image_problem(image, "unpinned" in allow)
-            if problem:
-                add(n, problem)
-        elif kw == "USER":
-            user = rest.split()[0].split(":")[0] if rest.split() else None
-        elif kw == "ADD":
-            src = rest.split()[0] if rest.split() else ""
-            if not src.startswith(("http://", "https://")):
-                add(n, "ADD of a local path; use COPY (ADD also unpacks archives and fetches URLs)")
-        elif kw in {"ENV", "ARG"}:
-            name = re.split(r"[=\s]", rest, maxsplit=1)[0]
-            if SECRET_NAME.search(name):
-                add(n, f"{kw} {name} looks like a secret and persists in the image history; use RUN --mount=type=secret")
-        elif kw == "RUN":
-            if re.search(r"apt-get\s+update", rest) and not re.search(r"apt-get\s+(-\S+\s+)*install", rest):
-                add(n, "apt-get update in its own RUN caches a stale index; run it in the same RUN as apt-get install")
-            if re.search(r"apt-get\s+(-\S+\s+)*install", rest) and "--no-install-recommends" not in rest:
-                add(n, "apt-get install without --no-install-recommends pulls in extra packages")
-            if re.search(r"\bapk\s+add\b", rest) and "--no-cache" not in rest:
-                add(n, "apk add without --no-cache keeps the package index in the layer")
-            if re.search(r"(curl|wget)\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b", rest):
-                add(n, "RUN pipes a download into a shell; download, verify a checksum, then run")
-    if saw_from and "root" not in file_allow and (user is None or user.lower() in {"root", "0"}):
+    st = _DockerfileState(rel)
+    for item in instructions(text):
+        _check_instruction(st, _Instruction(*item))
+    out = st.out
+    if st.saw_from and "root" not in file_allow and (st.user is None or st.user.lower() in {"root", "0"}):
         out.append(f"{rel}: the final stage runs as root; add USER <non-root uid> (or `# docker-allow: root <reason>`)")
     if not (path.parent / ".dockerignore").is_file() and not (path.parent / f"{path.name}.dockerignore").is_file():
         out.append(f"{rel}: no .dockerignore next to the Dockerfile (the build context sends .git, secrets and caches)")
     return out
 
 
+def _compose_config(path: Path) -> subprocess.CompletedProcess:
+    cmd = ["docker", "compose", "-f", str(path), "config", "--format", "json", "--no-interpolate", "--no-env-resolution"]
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def _compose_config_with_defaults(path: Path) -> subprocess.CompletedProcess:
+    # `${VAR:-/some/path}:/mount` breaks --no-interpolate. Check a copy with the defaults filled in; the copy keeps every
+    # other key (including x-docker-allow), which an interpolated `compose config` would drop.
+    text = re.sub(r"\$\{[A-Za-z_]\w*:?-([^}$]*)\}", r"\1", path.read_text())
+    tmp = path.with_name(".docker-check-" + path.name)
+    try:
+        tmp.write_text(text)
+        return subprocess.run(["docker", "compose", "-f", str(tmp), "config", "--format", "json",
+                               "--no-interpolate", "--no-env-resolution"], capture_output=True, text=True)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _service_policy(svc: dict, allow: set[str]) -> list[str]:
+    msgs: list[str] = []
+    if svc.get("image"):
+        problem = image_problem(svc["image"], "unpinned" in allow)
+        if problem:
+            msgs.append(problem)
+    if svc.get("restart") in (None, "no", "") and "no-restart" not in allow:
+        msgs.append("no restart policy (set restart: unless-stopped, or x-docker-allow: [no-restart] for a one-shot job)")
+    return msgs
+
+
+def _service_resources(svc: dict, allow: set[str]) -> list[str]:
+    msgs: list[str] = []
+    hc = svc.get("healthcheck")
+    if (not hc or hc.get("disable")) and "no-healthcheck" not in allow:
+        msgs.append("no healthcheck (add one, or x-docker-allow: [no-healthcheck] with a reason)")
+    limits = ((svc.get("deploy") or {}).get("resources") or {}).get("limits") or {}
+    if not (svc.get("mem_limit") or limits.get("memory")) and "no-limits" not in allow:
+        msgs.append("no memory limit (set mem_limit, or x-docker-allow: [no-limits])")
+    return msgs
+
+
+def _service_isolation(svc: dict, allow: set[str]) -> list[str]:
+    msgs: list[str] = []
+    if svc.get("privileged") in (True, "true") and "privileged" not in allow:
+        msgs.append("privileged: true gives the container the host's devices and capabilities")
+    if svc.get("network_mode") == "host" and "host-network" not in allow:
+        msgs.append("network_mode: host removes network isolation")
+    if "docker.sock" in json.dumps(svc.get("volumes") or []) and "docker-sock" not in allow:
+        msgs.append("mounts docker.sock, which is root on the host")
+    return msgs
+
+
+def _service_secrets(svc: dict) -> list[str]:
+    msgs: list[str] = []
+    env = svc.get("environment") or {}
+    if isinstance(env, list):
+        env = dict(e.split("=", 1) if "=" in e else (e, None) for e in env)
+    for key, value in env.items():
+        if SECRET_NAME.search(key) and not re.search(r"(_|^)FILE$|SECRETFILE$", key) and value not in (None, "") and not str(value).startswith("${"):
+            msgs.append(f"literal secret in environment {key}; reference ${{VAR}} or use Compose secrets")
+    return msgs
+
+
 def check_compose(path: Path, root: Path) -> list[str]:
     rel = path.relative_to(root)
-    res = subprocess.run(["docker", "compose", "-f", str(path), "config", "--format", "json",
-                          "--no-interpolate", "--no-env-resolution"], capture_output=True, text=True)
+    res = _compose_config(path)
     if res.returncode != 0 and "too many colons" in res.stderr:
-        # `${VAR:-/some/path}:/mount` breaks --no-interpolate. Check a copy with the defaults filled in; the copy keeps every
-        # other key (including x-docker-allow), which an interpolated `compose config` would drop.
-        text = re.sub(r"\$\{[A-Za-z_]\w*:?-([^}$]*)\}", r"\1", path.read_text())
-        tmp = path.with_name(".docker-check-" + path.name)
-        try:
-            tmp.write_text(text)
-            res = subprocess.run(["docker", "compose", "-f", str(tmp), "config", "--format", "json",
-                                  "--no-interpolate", "--no-env-resolution"], capture_output=True, text=True)
-        finally:
-            tmp.unlink(missing_ok=True)
+        res = _compose_config_with_defaults(path)
     if res.returncode != 0:
         return [f"{rel}: not a valid Compose file: {res.stderr.strip().splitlines()[-1] if res.stderr.strip() else 'error'}"]
     services = json.loads(res.stdout).get("services") or {}
     out: list[str] = []
     for name, svc in sorted(services.items()):
         allow = set(svc.get("x-docker-allow") or [])
-
-        def add(msg: str) -> None:
-            out.append(f"{rel}:{name}: {msg}")
-
-        if svc.get("image"):
-            problem = image_problem(svc["image"], "unpinned" in allow)
-            if problem:
-                add(problem)
-        if svc.get("restart") in (None, "no", "") and "no-restart" not in allow:
-            add("no restart policy (set restart: unless-stopped, or x-docker-allow: [no-restart] for a one-shot job)")
-        hc = svc.get("healthcheck")
-        if (not hc or hc.get("disable")) and "no-healthcheck" not in allow:
-            add("no healthcheck (add one, or x-docker-allow: [no-healthcheck] with a reason)")
-        limits = ((svc.get("deploy") or {}).get("resources") or {}).get("limits") or {}
-        if not (svc.get("mem_limit") or limits.get("memory")) and "no-limits" not in allow:
-            add("no memory limit (set mem_limit, or x-docker-allow: [no-limits])")
-        if svc.get("privileged") in (True, "true") and "privileged" not in allow:
-            add("privileged: true gives the container the host's devices and capabilities")
-        if svc.get("network_mode") == "host" and "host-network" not in allow:
-            add("network_mode: host removes network isolation")
-        if "docker.sock" in json.dumps(svc.get("volumes") or []) and "docker-sock" not in allow:
-            add("mounts docker.sock, which is root on the host")
-        env = svc.get("environment") or {}
-        if isinstance(env, list):
-            env = dict(e.split("=", 1) if "=" in e else (e, None) for e in env)
-        for key, value in env.items():
-            if SECRET_NAME.search(key) and not re.search(r"(_|^)FILE$|SECRETFILE$", key) and value not in (None, "") and not str(value).startswith("${"):
-                add(f"literal secret in environment {key}; reference ${{VAR}} or use Compose secrets")
+        msgs = _service_policy(svc, allow) + _service_resources(svc, allow) + _service_isolation(svc, allow) + _service_secrets(svc)
+        out += [f"{rel}:{name}: {msg}" for msg in msgs]
     return out
+
+
+def _all_problems(dockerfiles: list[Path], composes: list[Path], root: Path) -> list[str]:
+    problems: list[str] = []
+    for f in dockerfiles:
+        problems += check_dockerfile(f, root)
+    for f in composes:
+        problems += check_compose(f, root)
+    return problems
+
+
+def _find_files(root: Path) -> tuple[list[Path], list[Path]]:
+    dockerfiles = [p for p in walk(root) if DOCKERFILE_NAME.match(p.name)]
+    composes = [p for p in walk(root) if COMPOSE_NAME.match(p.name)]
+    return dockerfiles, composes
 
 
 def main(argv: list[str]) -> int:
     root = Path(argv[1] if len(argv) > 1 else ".").resolve()
-    dockerfiles = [p for p in walk(root) if DOCKERFILE_NAME.match(p.name)]
-    composes = [p for p in walk(root) if COMPOSE_NAME.match(p.name)]
+    dockerfiles, composes = _find_files(root)
     if not dockerfiles and not composes:
         print("docker-check: no Dockerfiles or Compose files, nothing to check")
         return 0
     if composes and shutil.which("docker") is None:
         print("docker-check: missing tool: docker (needed to normalize Compose files)", file=sys.stderr)
         return 127
-    problems: list[str] = []
-    for f in dockerfiles:
-        problems += check_dockerfile(f, root)
-    for f in composes:
-        problems += check_compose(f, root)
+    problems = _all_problems(dockerfiles, composes, root)
     for p in problems:
         print(p)
     if not problems:

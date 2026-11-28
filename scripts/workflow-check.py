@@ -55,79 +55,114 @@ def job_blocks(lines: list[str]) -> list[tuple[str, int, int]]:
     return jobs
 
 
-def check_workflow(path: Path) -> list[str]:
-    lines = path.read_text().splitlines()
-    out: list[str] = []
-    name = path.name
+Finding = tuple[int, str]
+INJECTION = "script injection: untrusted context inside a run/script body; pass it through `env:` and read $VAR"
 
-    def add(i: int, msg: str) -> None:
-        out.append(f"{name}:{i + 1}: {msg}")
 
-    # permissions
-    jobs = job_blocks(lines)
+def _permission_findings(lines: list[str], jobs: list[tuple[str, int, int]]) -> list[Finding]:
+    out: list[Finding] = []
     top_perm = any(re.match(r"^permissions\s*:", l) for l in lines)
     if not top_perm:
         for jname, start, end in jobs:
             if not any(re.match(r"^ {4}permissions\s*:", l) for l in lines[start:end]):
-                add(start, f"job '{jname}' has no permissions (set `permissions:` at the top level, read-only by default)")
+                out.append((start, f"job '{jname}' has no permissions (set `permissions:` at the top level, read-only by default)"))
         if not jobs:
-            add(0, "no permissions set (add a top-level `permissions: contents: read`)")
+            out.append((0, "no permissions set (add a top-level `permissions: contents: read`)"))
+    return out
 
-    # timeout-minutes (reusable-workflow calls are exempt)
+
+def _timeout_findings(lines: list[str], jobs: list[tuple[str, int, int]]) -> list[Finding]:
+    # reusable-workflow calls are exempt
+    out: list[Finding] = []
     for jname, start, end in jobs:
         block = lines[start:end]
         if any(re.match(r"^ {4}uses\s*:", l) for l in block):
             continue
         if not any(re.match(r"^ {4}timeout-minutes\s*:", l) for l in block):
-            add(start, f"job '{jname}' has no timeout-minutes")
-
-    for i, line in enumerate(lines):
-        stripped = code_part(line)
-        # pull_request_target
-        if re.search(r"\bpull_request_target\b", stripped) and "gha-allow: pull_request_target" not in line:
-            add(i, "pull_request_target trigger (runs with secrets on fork code); use pull_request, or justify with "
-                   "`# gha-allow: pull_request_target <reason>`")
-        # secrets: inherit
-        if re.match(r"^\s*secrets\s*:\s*inherit\b", stripped):
-            add(i, "secrets: inherit passes every secret to the called workflow; pass only the ones it needs")
-        # unpinned uses
-        m = USES_RE.match(line)
-        if m:
-            ref = m.group(3)
-            if not (ref.startswith("./") or ref.startswith("docker://")):
-                version = ref.split("@", 1)[1] if "@" in ref else ""
-                if not SHA_RE.fullmatch(version):
-                    add(i, f"action '{ref}' is not pinned to a full commit SHA (pin it and keep the version in a comment)")
-            if ref.startswith("actions/checkout@"):
-                marker = indent(line) if m.group(2) else None
-                if marker is None:
-                    j = i - 1
-                    while j >= 0 and not (re.match(r"^\s*-\s", lines[j]) and indent(lines[j]) < indent(line)):
-                        j -= 1
-                    marker = indent(lines[j]) if j >= 0 else indent(line)
-                    start = max(j, 0)
-                else:
-                    start = i
-                end = start + 1
-                while end < len(lines) and not (lines[end].strip() and indent(lines[end]) <= marker
-                                                and not lines[end].lstrip().startswith("#")):
-                    end += 1
-                if not any(re.search(r"persist-credentials\s*:\s*false", l) for l in lines[start:end]):
-                    add(i, "actions/checkout without `persist-credentials: false` leaves the token on disk for later steps")
-        # script injection in run: / script:
-        r = RUN_RE.match(line)
-        if r:
-            key_indent = len(r.group(1)) + (len(r.group(2)) if r.group(2) else 0)
-            rest = code_part(r.group(4)).strip()
-            if rest in BLOCK_MARKERS:
-                j = i + 1
-                while j < len(lines) and (not lines[j].strip() or indent(lines[j]) > key_indent):
-                    if UNTRUSTED.search(lines[j]):
-                        add(j, "script injection: untrusted context inside a run/script body; pass it through `env:` and read $VAR")
-                    j += 1
-            elif UNTRUSTED.search(rest):
-                add(i, "script injection: untrusted context inside a run/script body; pass it through `env:` and read $VAR")
+            out.append((start, f"job '{jname}' has no timeout-minutes"))
     return out
+
+
+def _item_start(lines: list[str], i: int) -> tuple[int, int]:
+    """(marker indent, start index) of the list item that holds the `uses:` on line i, when it has no `- ` of its own."""
+    line = lines[i]
+    j = i - 1
+    while j >= 0 and not (re.match(r"^\s*-\s", lines[j]) and indent(lines[j]) < indent(line)):
+        j -= 1
+    marker = indent(lines[j]) if j >= 0 else indent(line)
+    return marker, max(j, 0)
+
+
+def _item_end(lines: list[str], start: int, marker: int) -> int:
+    end = start + 1
+    while end < len(lines) and not (lines[end].strip() and indent(lines[end]) <= marker
+                                    and not lines[end].lstrip().startswith("#")):
+        end += 1
+    return end
+
+
+def _checkout_span(lines: list[str], i: int, has_dash: bool) -> tuple[int, int]:
+    if has_dash:
+        marker, start = indent(lines[i]), i
+    else:
+        marker, start = _item_start(lines, i)
+    return start, _item_end(lines, start, marker)
+
+
+def _uses_findings(lines: list[str], i: int, m: re.Match) -> list[Finding]:
+    out: list[Finding] = []
+    ref = m.group(3)
+    if not (ref.startswith("./") or ref.startswith("docker://")):
+        version = ref.split("@", 1)[1] if "@" in ref else ""
+        if not SHA_RE.fullmatch(version):
+            out.append((i, f"action '{ref}' is not pinned to a full commit SHA (pin it and keep the version in a comment)"))
+    if ref.startswith("actions/checkout@"):
+        start, end = _checkout_span(lines, i, bool(m.group(2)))
+        if not any(re.search(r"persist-credentials\s*:\s*false", l) for l in lines[start:end]):
+            out.append((i, "actions/checkout without `persist-credentials: false` leaves the token on disk for later steps"))
+    return out
+
+
+def _run_findings(lines: list[str], i: int, r: re.Match) -> list[Finding]:
+    out: list[Finding] = []
+    key_indent = len(r.group(1)) + (len(r.group(2)) if r.group(2) else 0)
+    rest = code_part(r.group(4)).strip()
+    if rest in BLOCK_MARKERS:
+        j = i + 1
+        while j < len(lines) and (not lines[j].strip() or indent(lines[j]) > key_indent):
+            if UNTRUSTED.search(lines[j]):
+                out.append((j, INJECTION))
+            j += 1
+    elif UNTRUSTED.search(rest):
+        out.append((i, INJECTION))
+    return out
+
+
+def _line_findings(lines: list[str], i: int) -> list[Finding]:
+    line = lines[i]
+    stripped = code_part(line)
+    out: list[Finding] = []
+    if re.search(r"\bpull_request_target\b", stripped) and "gha-allow: pull_request_target" not in line:
+        out.append((i, "pull_request_target trigger (runs with secrets on fork code); use pull_request, or justify with "
+                       "`# gha-allow: pull_request_target <reason>`"))
+    if re.match(r"^\s*secrets\s*:\s*inherit\b", stripped):
+        out.append((i, "secrets: inherit passes every secret to the called workflow; pass only the ones it needs"))
+    m = USES_RE.match(line)
+    if m:
+        out += _uses_findings(lines, i, m)
+    r = RUN_RE.match(line)
+    if r:
+        out += _run_findings(lines, i, r)
+    return out
+
+
+def check_workflow(path: Path) -> list[str]:
+    lines = path.read_text().splitlines()
+    jobs = job_blocks(lines)
+    findings = _permission_findings(lines, jobs) + _timeout_findings(lines, jobs)
+    for i in range(len(lines)):
+        findings += _line_findings(lines, i)
+    return [f"{path.name}:{i + 1}: {msg}" for i, msg in findings]
 
 
 def check_dependabot(root: Path) -> list[str]:

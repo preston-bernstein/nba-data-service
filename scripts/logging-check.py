@@ -38,6 +38,33 @@ COMPOSE = re.compile(r"^(docker-)?compose[^/]*\.ya?ml$")
 OPT_IN = re.compile(r"""observability\.logs["']?\s*[:=]\s*["']?true\b""")
 
 
+def _required_problems(obj: dict, where: str) -> list[str]:
+    return [f"{where}: missing required field {key}" for key in REQUIRED if obj.get(key) in (None, "")]
+
+
+def _field_problems(obj: dict, where: str) -> list[str]:
+    problems = _required_problems(obj, where)
+    if "ts" in obj and not (isinstance(obj["ts"], str) and TS.match(obj["ts"])):
+        problems.append(f"{where}: ts must be RFC3339 UTC like 2026-11-14T14:32:07Z")
+    if obj.get("level") not in LEVELS and obj.get("level") not in (None, ""):
+        problems.append(f"{where}: level {obj['level']!r} must be one of {sorted(LEVELS)}")
+    if obj.get("event") and not (isinstance(obj["event"], str) and EVENT.match(obj["event"])):
+        problems.append(f"{where}: event {obj['event']!r} must be dot-namespaced like batch.completed")
+    return problems
+
+
+def _outcome_problems(obj: dict, where: str) -> list[str]:
+    problems = []
+    outcome = obj.get("outcome")
+    if outcome is not None and outcome not in OUTCOMES:
+        problems.append(f"{where}: outcome {outcome!r} must be one of {sorted(OUTCOMES)}")
+    elif outcome in ("partial", "failed"):
+        for key in ("err_type", "err_msg"):
+            if not obj.get(key):
+                problems.append(f"{where}: outcome {outcome} needs {key}")
+    return problems
+
+
 def check_lines(path: Path) -> list[str]:
     problems = []
     for n, raw in enumerate(path.read_text().splitlines(), 1):
@@ -47,25 +74,12 @@ def check_lines(path: Path) -> list[str]:
             obj = json.loads(raw)
         except ValueError:
             obj = None
+        where = f"{path.name}:{n}"
         if not isinstance(obj, dict):
-            problems.append(f"{path.name}:{n}: not a JSON object")
+            problems.append(f"{where}: not a JSON object")
             continue
-        for key in REQUIRED:
-            if obj.get(key) in (None, ""):
-                problems.append(f"{path.name}:{n}: missing required field {key}")
-        if "ts" in obj and not (isinstance(obj["ts"], str) and TS.match(obj["ts"])):
-            problems.append(f"{path.name}:{n}: ts must be RFC3339 UTC like 2026-11-14T14:32:07Z")
-        if obj.get("level") not in LEVELS and obj.get("level") not in (None, ""):
-            problems.append(f"{path.name}:{n}: level {obj['level']!r} must be one of {sorted(LEVELS)}")
-        if obj.get("event") and not (isinstance(obj["event"], str) and EVENT.match(obj["event"])):
-            problems.append(f"{path.name}:{n}: event {obj['event']!r} must be dot-namespaced like batch.completed")
-        outcome = obj.get("outcome")
-        if outcome is not None and outcome not in OUTCOMES:
-            problems.append(f"{path.name}:{n}: outcome {outcome!r} must be one of {sorted(OUTCOMES)}")
-        elif outcome in ("partial", "failed"):
-            for key in ("err_type", "err_msg"):
-                if not obj.get(key):
-                    problems.append(f"{path.name}:{n}: outcome {outcome} needs {key}")
+        problems += _field_problems(obj, where)
+        problems += _outcome_problems(obj, where)
     return problems
 
 
@@ -76,6 +90,19 @@ def visible(root: Path):
             yield p
 
 
+def _still_in_services(line: str, in_services: bool) -> bool:
+    if in_services and re.match(r"^\S", line) and not line.startswith("#"):
+        return False
+    return in_services
+
+
+def _service_header(line: str, indent):
+    m = re.match(r"^( +)([A-Za-z0-9_.-]+):\s*(#.*)?$", line)
+    if m and (indent is None or len(m.group(1)) == indent):
+        return m.group(2), len(m.group(1))
+    return None
+
+
 def services(text: str):
     """Yield (name, first_line_number, block_text) for each service under the top-level `services:` key."""
     lines = text.splitlines()
@@ -84,16 +111,15 @@ def services(text: str):
         if re.match(r"^services:\s*(#.*)?$", line):
             in_services = True
             continue
-        if in_services and re.match(r"^\S", line) and not line.startswith("#"):
-            in_services = False
+        in_services = _still_in_services(line, in_services)
         if not in_services:
             continue
-        m = re.match(r"^( +)([A-Za-z0-9_.-]+):\s*(#.*)?$", line)
-        if m and (indent is None or len(m.group(1)) == indent):
-            indent = len(m.group(1))
+        header = _service_header(line, indent)
+        if header:
+            indent = header[1]
             if current:
                 yield current[0], current[1], "\n".join(current[2])
-            current = (m.group(2), n, [])
+            current = (header[0], n, [])
         elif current:
             current[2].append(line)
     if current:

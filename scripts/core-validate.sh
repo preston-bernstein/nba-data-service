@@ -26,13 +26,19 @@ need lizard
 need jscpd
 
 # .core-config: CORE_* overrides, one per line, each with a reason: CORE_DUP_THRESHOLD=9  # why
+# CORE_EXCLUDE may appear on several lines (one glob each, each with its reason); the globs add up.
 if [ -f .core-config ]; then
+  exclude_from_env="${CORE_EXCLUDE+x}"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in "" | "#"*) continue ;; esac
     if [[ "$line" =~ ^(CORE_[A-Z_]+)=([A-Za-z0-9_.*/-]+)[[:space:]]+#[[:space:]]*[^[:space:]].*$ ]]; then
       cfg_name="${BASH_REMATCH[1]}"
       cfg_val="${BASH_REMATCH[2]}"
-      [ -n "${!cfg_name+x}" ] || export "$cfg_name=$cfg_val" # the environment wins over the file
+      if [ "$cfg_name" = CORE_EXCLUDE ] && [ -z "$exclude_from_env" ]; then
+        export CORE_EXCLUDE="${CORE_EXCLUDE:+$CORE_EXCLUDE }$cfg_val"
+      else
+        [ -n "${!cfg_name+x}" ] || export "$cfg_name=$cfg_val" # the environment wins over the file
+      fi
     else
       fail ".core-config: each line must be CORE_NAME=value  # reason (got: $line)" 2
     fi
