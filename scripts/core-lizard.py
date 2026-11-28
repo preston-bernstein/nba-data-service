@@ -24,18 +24,17 @@ PAIR = re.compile(r"(\d+) (NLOC|CCN|token|PARAM|length|ND|cognitive)")
 DEFAULT_BASELINE = ".core-baseline.json"
 
 
-def run_lizard(args, root):
+def _lizard_cmd(args):
     cmd = ["lizard", "-C", str(args.ccn), "-L", str(args.length), "-a", str(args.params), "-Ecognitive", "-ENS",
            "-T", "cognitive_complexity=%d" % args.cognitive, "-T", "max_nested_structures=%d" % args.nesting, "-w"]
     for glob in args.exclude:
         cmd += ["-x", glob]
-    try:
-        p = subprocess.run(cmd + [root], capture_output=True, text=True)
-    except OSError:
-        print("core-lizard: lizard is not installed", file=sys.stderr)
-        sys.exit(127)
+    return cmd
+
+
+def _parse_found(stdout):
     found = {}
-    for raw in p.stdout.splitlines():
+    for raw in stdout.splitlines():
         m = LINE.match(raw)
         if not m:
             continue
@@ -44,6 +43,17 @@ def run_lizard(args, root):
         key = "%s::%s" % (path, m["name"])
         old = found.get(key, {})
         found[key] = {k: max(metrics.get(k, 0), old.get(k, 0)) for k in set(metrics) | set(old)}
+    return found
+
+
+def run_lizard(args, root):
+    cmd = _lizard_cmd(args)
+    try:
+        p = subprocess.run(cmd + [root], capture_output=True, text=True)
+    except OSError:
+        print("core-lizard: lizard is not installed", file=sys.stderr)
+        sys.exit(127)
+    found = _parse_found(p.stdout)
     if p.returncode not in (0, 1) and not found:
         print(p.stderr.strip() or "core-lizard: lizard failed", file=sys.stderr)
         sys.exit(p.returncode)
@@ -75,7 +85,7 @@ def compare(found, baseline):
     return problems
 
 
-def main(argv):
+def _parse_args(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--baseline", default=None)
@@ -83,17 +93,25 @@ def main(argv):
         ap.add_argument("--" + name, type=int, default=default)
     ap.add_argument("-x", dest="exclude", action="append", default=[])
     ap.add_argument("root", nargs="?", default=".")
-    args = ap.parse_args([a for a in argv if a != "--"])
+    return ap.parse_args([a for a in argv if a != "--"])
+
+
+def _write_baseline(found, path):
+    old = {}
+    if Path(path).is_file():
+        old = load_baseline(path)
+    reason = old.get("_reason") or "Existing over-limit functions accepted on %s; new code must stay within the limits. Fix them when touched." % __import__("datetime").date.today()
+    Path(path).write_text(json.dumps({"_reason": reason, "functions": dict(sorted(found.items()))}, indent=1, sort_keys=False) + "\n")
+    print("core-lizard: wrote %d function(s) to %s" % (len(found), path))
+    return 0
+
+
+def main(argv):
+    args = _parse_args(argv)
     path = args.baseline or DEFAULT_BASELINE
     found = run_lizard(args, args.root)
     if args.write:
-        old = {}
-        if Path(path).is_file():
-            old = load_baseline(path)
-        reason = old.get("_reason") or "Existing over-limit functions accepted on %s; new code must stay within the limits. Fix them when touched." % __import__("datetime").date.today()
-        Path(path).write_text(json.dumps({"_reason": reason, "functions": dict(sorted(found.items()))}, indent=1, sort_keys=False) + "\n")
-        print("core-lizard: wrote %d function(s) to %s" % (len(found), path))
-        return 0
+        return _write_baseline(found, path)
     baseline = load_baseline(path)["functions"] if Path(path).is_file() else {}
     if not baseline:
         problems = ["over-limit function: %s" % k for k in sorted(found)]
